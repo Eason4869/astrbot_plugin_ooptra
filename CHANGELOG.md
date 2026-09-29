@@ -2,6 +2,12 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号尽量符合 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.2.1] - 2026-09-29
+
+### Fixed
+
+- 安装/加载失败 `ModuleNotFoundError: No module named 'ooptra_client'`：改为包内相对导入 `from .ooptra_client import ...`（AstrBot 以 `data.plugins.<name>.main` 包路径加载插件，同级模块不能按顶层绝对导入）
+
 ## [0.2.0] - 2026-09-29
 
 ### Security
@@ -47,6 +53,7 @@
 - QQ 指令：语音状态/进退语音/绑定解绑/自检/帮助
 - LLM 工具与 VOICE_API 客户端、mock、基础单测
 
+[0.2.1]: https://github.com/Eason4869/astrbot_plugin_ooptra/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Eason4869/astrbot_plugin_ooptra/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/Eason4869/astrbot_plugin_ooptra/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/Eason4869/astrbot_plugin_ooptra/releases/tag/v0.1.0

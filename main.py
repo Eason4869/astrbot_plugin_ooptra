@@ -18,7 +18,7 @@ from astrbot.api import AstrBotConfig, logger
 from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star
 
-from ooptra_client import (
+from .ooptra_client import (
     OoptraClient,
     OoptraError,
     format_members,
