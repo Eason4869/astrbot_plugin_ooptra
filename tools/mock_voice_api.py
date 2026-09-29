@@ -1,26 +1,32 @@
-"""本地模拟 Ooptra VOICE_API，便于在项目 1 落地前联调插件。
+"""本地模拟 Ooptra VOICE_API，便于在 Ooptra 侧就绪前联调插件。
 
 用法（标准库，无需额外依赖）：
   python mock_voice_api.py [port]
 
-默认 3090。响应体与 Ooptra 契约一致。
+默认 3090。响应体与 Ooptra 契约一致。本 mock 不校验 token。
 """
 
 from __future__ import annotations
 
 import json
-import re
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-JOINED = {"joined": True, "area": "demo-area", "channel": "demo-channel", "state": "playing"}
+_LOCK = threading.Lock()
+JOINED = {
+    "joined": True,
+    "area": "demo-area",
+    "channel": "demo-channel",
+    "state": "playing",
+}
 
 MEMBERS = {
     "count": 3,
     "members": [
         {"uid": "u1", "name": "小明", "mic": True, "speaker": True},
         {"uid": "u2", "name": "小红", "mic": False, "speaker": True},
-        {"uid": "u3", "name": "小刚", "mic": True, "speaker": False},
+        {"uid": "u3", "name": "小刚", "m": 1, "hm": 0},
     ],
 }
 
@@ -37,13 +43,15 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):  # noqa: N802
         parsed = urlparse(self.path)
         path = parsed.path.rstrip("/") or "/"
-        if path in ("/health",):
+        if path == "/health":
             self._json(200, {"ok": True, "service": "mock-ooptra-voice-api"})
             return
-        if path in ("/voice/status",):
-            self._json(200, JOINED)
+        if path == "/voice/status":
+            with _LOCK:
+                snapshot = dict(JOINED)
+            self._json(200, snapshot)
             return
-        if path in ("/voice/members",):
+        if path == "/voice/members":
             qs = parse_qs(parsed.query)
             area = (qs.get("area") or [""])[0]
             channel = (qs.get("channel") or [""])[0]
@@ -66,11 +74,13 @@ class Handler(BaseHTTPRequestHandler):
             if not area or not channel:
                 self._json(400, {"ok": False, "error": "area/channel required"})
                 return
-            JOINED.update(joined=True, area=area, channel=channel, state="joined")
+            with _LOCK:
+                JOINED.update(joined=True, area=area, channel=channel, state="joined")
             self._json(200, {"ok": True, "joined": True, "area": area, "channel": channel})
             return
         if path == "/voice/leave":
-            JOINED.update(joined=False, state="idle")
+            with _LOCK:
+                JOINED.update(joined=False, state="idle")
             self._json(200, {"ok": True, "joined": False})
             return
         self._json(404, {"ok": False, "error": f"not found: {path}"})
