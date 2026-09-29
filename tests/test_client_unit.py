@@ -9,10 +9,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from ooptra_client import (  # noqa: E402
+    channel_rows,
+    format_channel_counts,
     format_members,
     format_status,
     looks_like_id,
     looks_like_label,
+    resolve_channel,
     resolve_group_mapping,
 )
 
@@ -22,7 +25,10 @@ class TestResolveGroupMapping(unittest.TestCase):
         m = resolve_group_mapping(
             {"123": {"area": "A", "channel": "C", "label": "L"}}, "123"
         )
-        self.assertEqual(m, {"area": "A", "channel": "C", "label": "L"})
+        self.assertEqual(m["area"], "A")
+        self.assertEqual(m["areas"], ["A"])
+        self.assertEqual(m["channel"], "C")
+        self.assertEqual(m["label"], "L")
 
     def test_int_key_compat(self):
         m = resolve_group_mapping({123: {"area": "A", "channel": "C"}}, "123")
@@ -41,6 +47,63 @@ class TestResolveGroupMapping(unittest.TestCase):
         self.assertIsNone(resolve_group_mapping({}, "1"))
         self.assertIsNone(resolve_group_mapping(None, "1"))
         self.assertIsNone(resolve_group_mapping({"1": {}}, None))
+
+    def test_multi_area_preferred(self):
+        m = resolve_group_mapping(
+            {"123": {"areas": ["A1", "A2"], "channel": "C"}}, "123", preferred_area="A2"
+        )
+        self.assertEqual(m["area"], "A2")
+        self.assertEqual(m["areas"], ["A1", "A2"])
+
+    def test_multi_area_first_when_no_preferred(self):
+        m = resolve_group_mapping(
+            {"123": {"area": "A1、A2", "channel": "C"}}, "123", preferred_area=""
+        )
+        self.assertEqual(m["area"], "A1")
+        self.assertEqual(m["areas"], ["A1", "A2"])
+
+    def test_multi_area_preferred_not_in_list(self):
+        m = resolve_group_mapping(
+            {"123": {"areas": ["A1", "A2"]}}, "123", preferred_area="A9"
+        )
+        self.assertEqual(m["area"], "A1")
+
+
+class TestChannelHelpers(unittest.TestCase):
+    def test_channel_rows(self):
+        rows = channel_rows(
+            {"channels": [{"id": "c1", "name": "开黑房", "count": 3}, {"id": "c2", "count": 0}]}
+        )
+        self.assertEqual(rows[0], {"id": "c1", "name": "开黑房", "count": 3})
+        self.assertEqual(rows[1]["name"], "c2")
+
+    def test_format_channel_counts_occupied(self):
+        text = format_channel_counts(
+            {
+                "channels": [
+                    {"id": "c1", "name": "开黑房", "count": 3},
+                    {"id": "c2", "name": "闲聊房", "count": 0},
+                    {"id": "c3", "name": "挂机房", "count": 1},
+                ]
+            }
+        )
+        self.assertIn("开黑房 3人", text)
+        self.assertIn("挂机房 1人", text)
+        self.assertNotIn("闲聊房", text)
+
+    def test_format_channel_counts_empty(self):
+        text = format_channel_counts({"channels": [{"id": "c1", "name": "空房", "count": 0}]})
+        self.assertIn("没有人", text)
+
+    def test_resolve_channel_by_name_and_id(self):
+        rows = [
+            {"id": "c1", "name": "开黑房", "count": 1},
+            {"id": "c2", "name": "闲聊房", "count": 0},
+        ]
+        self.assertEqual(resolve_channel(rows, "开黑房")["id"], "c1")
+        self.assertEqual(resolve_channel(rows, "c2")["id"], "c2")
+        self.assertEqual(resolve_channel(rows, "开黑")["id"], "c1")
+        self.assertIsNone(resolve_channel(rows, "不存在"))
 
 
 class TestIdHeuristics(unittest.TestCase):

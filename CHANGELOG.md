@@ -2,6 +2,21 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号尽量符合 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.3.0] - 2026-09-29
+
+### Added
+
+- `/语音状态` 改为按域汇总各语音频道在线人数（名称+人数），不再要求配置默认频道
+- `/进语音` 支持按频道名或频道 ID 指定目标；不带参数时进默认频道
+- 一群多域绑定：`group_map` 支持 `"areas": ["ID1","ID2"]`，查询与进房按 Ooptra 默认域择一
+- 群未绑定频道时，回退到 Ooptra WebUI「设为默认」写入的默认频道
+- 新增 VOICE_API 契约 `GET /voice/channels?area=`
+
+### Changed
+
+- `api_token` 说明与 Ooptra 侧对齐：默认填 `WEBUI_CONFIG.token`，独立 VOICE_API 才填 `VOICE_API_CONFIG.token`
+- `/语音帮助` 文案同步新指令用法
+
 ## [0.2.1] - 2026-09-29
 
 ### Fixed
@@ -53,6 +68,7 @@
 - QQ 指令：语音状态/进退语音/绑定解绑/自检/帮助
 - LLM 工具与 VOICE_API 客户端、mock、基础单测
 
+[0.3.0]: https://github.com/Eason4869/astrbot_plugin_ooptra/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/Eason4869/astrbot_plugin_ooptra/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Eason4869/astrbot_plugin_ooptra/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/Eason4869/astrbot_plugin_ooptra/compare/v0.1.0...v0.1.1

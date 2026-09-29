@@ -14,13 +14,17 @@
 
 | 指令 | 说明 | 权限 |
 |------|------|------|
-| `/语音状态` `/语音人数` | 查看绑定频道人数与成员（含闭麦/闭听） | 全员 |
-| `/进语音 [频道ID]` | Bot 进入绑定频道；指定其他频道需管理员或开启自定义 | 可配置 |
+| `/语音状态` `/语音人数` | 查看绑定域内各语音频道在线人数（无需默认频道） | 全员 |
+| `/进语音 [频道名\|频道ID]` | 进默认频道；也可按频道名/ID 指定其他频道 | 可配置 |
 | `/退语音` | Bot 退出语音 | 可配置 |
 | `/语音绑定 <域ID> [频道ID] [备注]` | 将当前 QQ 群绑定到 Oopz 域/频道 | 管理员 |
 | `/语音解绑` | 解除当前群绑定 | 管理员 |
 | `/语音自检` | 检测 Ooptra VOICE_API 连通性 | 全员 |
 | `/语音帮助` | 指令说明 | 全员 |
+
+**默认目标**：在 Ooptra 控制台「语音台 → 会话控制」选中域/频道后点**「设为默认」**，即写入 `OOPZ_CONFIG.default_area` / `default_channel`。
+- `/进语音` 不带参数时进**默认频道**（群绑定里没填频道时也用它）
+- 一个 QQ 群绑了多个域（`group_map` 里 `areas` 为列表）时，状态查询与进房按**默认域**择一
 
 可选 LLM 工具（`enable_llm_tools`）：
 
@@ -60,13 +64,16 @@ Ooptra  ◄── Oopz 文字消息
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | `/health` | 健康检查（可选，失败会回退 `/voice/status`） |
-| GET | `/voice/status` | Bot 是否在语音房 |
+| GET | `/voice/status` | Bot 是否在语音房（含默认域/默认频道） |
+| GET | `/voice/channels?area=` | 域内语音频道与在线人数 |
 | GET | `/voice/members?area=&channel=` | 频道在线人数与成员 |
 | POST | `/voice/join` | Body: `{"area","channel"}` |
 | POST | `/voice/leave` | 退出语音 |
-| — | `Authorization: Bearer <token>` | token 为空则不校验 |
+| — | `Authorization: Bearer <token>` | 与 Ooptra 侧令牌一致；两边都留空则不校验 |
 
 成员字段兼容 `mic`/`speaker` 或 `m`/`hm`（0=闭，1=开）。
+
+**令牌对齐**：VOICE_API 默认挂在 Ooptra WebUI 同端口（`3090`），鉴权走 **`WEBUI_CONFIG.token`**；只有单独打开 `VOICE_API_CONFIG`（独立端口）时才用 **`VOICE_API_CONFIG.token`**。本插件的 `api_token` 填其中生效的那个即可，两边都留空则不校验。
 
 > 未实现 VOICE_API 时可用 `tools/mock_voice_api.py` 联调（**mock 不校验 token**）。
 
@@ -86,9 +93,9 @@ Ooptra  ◄── Oopz 文字消息
    pip install -r requirements.txt
    ```
 
-3. WebUI → 插件 → 启用 → 配置 `api_base` / `api_token`
+3. WebUI → 插件 → 启用 → 配置 `api_base` / `api_token`（令牌与 Ooptra 侧生效项一致，默认填 `WEBUI_CONFIG.token`）
 
-4. 在目标 QQ 群：
+4. 在 Ooptra 控制台「语音台 → 会话控制」查看并复制**域 ID / 频道 ID**，然后在目标 QQ 群：
 
    ```text
    /语音绑定 <Oopz域ID> <频道ID> 开黑房
@@ -102,8 +109,8 @@ Ooptra  ◄── Oopz 文字消息
 
 | 配置 | 默认 | 说明 |
 |------|------|------|
-| `api_base` | `http://127.0.0.1:3090` | VOICE_API 根地址 |
-| `api_token` | 空 | Bearer 令牌 |
+| `api_base` | `http://127.0.0.1:3090` | VOICE_API 根地址（默认与 Ooptra WebUI 同源） |
+| `api_token` | 空 | Bearer 令牌；填 Ooptra 的 `WEBUI_CONFIG.token`（默认），或独立 VOICE_API 时的 `VOICE_API_CONFIG.token` |
 | `timeout_sec` | `8` | HTTP 超时（秒），≤0 时回退 8 |
 | `group_map` | `{}` | QQ 群号 → `{area, channel, label}` |
 | `allow_join` | `true` | 是否允许进/退语音 |
@@ -124,6 +131,18 @@ Ooptra  ◄── Oopz 文字消息
 ```
 
 也支持简写：`"123456789": "域ID:频道ID"`。
+
+一群绑多个域（查询/进房按 Ooptra 默认域择一）：
+
+```json
+{
+  "123456789": {
+    "areas": ["域ID-1", "域ID-2"],
+    "channel": "channel-uid-xxx",
+    "label": "多域群"
+  }
+}
+```
 
 绑定时若把中文备注误填到频道位，会自动识别为备注（`/语音绑定 域ID 开黑房`）。
 
@@ -164,8 +183,11 @@ python tools/mock_voice_api.py 3090
 **无法访问 Ooptra VOICE_API**  
 查 Ooptra 是否启动、`api_base`/`api_token` 是否一致、防火墙。
 
+**鉴权失败 / 401**  
+`api_token` 要和 Ooptra 侧生效的令牌一致：默认是 Web 控制台的 `WEBUI_CONFIG.token`；若单独启用了 `VOICE_API_CONFIG`（独立端口），则是 `VOICE_API_CONFIG.token`。两边都留空表示不校验。
+
 **群 xxx 未绑定 Oopz 频道**  
-管理员：`/语音绑定 <域ID> [频道ID] [备注]`
+管理员：`/语音绑定 <域ID> [频道ID] [备注]`。域 ID / 频道 ID 可在 Ooptra 控制台「语音台 → 会话控制」页查看并一键复制。
 
 **提示仅允许进入绑定频道**  
 更新绑定，或由管理员 `/进语音 <频道ID>`，或打开 `allow_arbitrary_channel`。

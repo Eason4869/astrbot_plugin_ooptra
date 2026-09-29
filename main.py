@@ -2,6 +2,7 @@
 
 依赖 Ooptra 侧 VOICE_API 契约：
   GET  /voice/status
+  GET  /voice/channels?area=        # 域内语音频道 + 在线人数
   GET  /voice/members?area=&channel=
   POST /voice/join   {"area","channel"}
   POST /voice/leave
@@ -21,10 +22,13 @@ from astrbot.api.star import Context, Star
 from .ooptra_client import (
     OoptraClient,
     OoptraError,
+    channel_rows,
+    format_channel_counts,
     format_members,
     format_status,
     looks_like_id,
     looks_like_label,
+    resolve_channel,
     resolve_group_mapping,
 )
 
@@ -80,11 +84,27 @@ class OoptraPlugin(Star):
     def _group_id(self, event: AstrMessageEvent) -> str:
         return str(getattr(event.message_obj, "group_id", "") or "").strip()
 
-    def _mapping(self, event: AstrMessageEvent) -> dict[str, str] | None:
-        return resolve_group_mapping(self.config.get("group_map") or {}, self._group_id(event))
+    def _mapping(self, event: AstrMessageEvent, *, preferred_area: str = "") -> dict[str, Any] | None:
+        return resolve_group_mapping(
+            self.config.get("group_map") or {},
+            self._group_id(event),
+            preferred_area=preferred_area,
+        )
 
-    def _require_mapping(self, event: AstrMessageEvent) -> dict[str, str]:
-        mapping = self._mapping(event)
+    async def _ooptra_defaults(self) -> dict[str, str]:
+        """读取 Ooptra 侧默认域/默认频道（WebUI「设为默认」写入）。"""
+        try:
+            data = await self.client.status()
+        except OoptraError:
+            return {"default_area": "", "default_channel": ""}
+        return {
+            "default_area": str(data.get("default_area") or ""),
+            "default_channel": str(data.get("default_channel") or ""),
+        }
+
+    async def _require_mapping(self, event: AstrMessageEvent) -> dict[str, Any]:
+        defaults = await self._ooptra_defaults()
+        mapping = self._mapping(event, preferred_area=defaults.get("default_area", ""))
         if not mapping:
             group_id = self._group_id(event) or "（私聊）"
             return {
@@ -95,6 +115,8 @@ class OoptraPlugin(Star):
             }
         if not mapping.get("area"):
             return {"_error": "当前群映射缺少 area（域 ID），请检查插件配置或重新 /语音绑定"}
+        mapping["_default_channel"] = defaults.get("default_channel", "")
+        mapping["_default_area"] = defaults.get("default_area", "")
         return mapping
 
     def _is_admin(self, event: AstrMessageEvent) -> bool:
@@ -143,15 +165,14 @@ class OoptraPlugin(Star):
 
     @filter.command("语音状态", alias={"语音人数", "voice_status", "语音频道"})
     async def voice_status(self, event: AstrMessageEvent):
-        """查询当前群绑定的 Oopz 语音频道人数与状态。"""
-        mapping = self._require_mapping(event)
+        """查询本群绑定域内各语音频道的在线人数（无需配置默认频道）。"""
+        mapping = await self._require_mapping(event)
         if mapping.get("_error"):
-            yield event.plain_result(mapping["_error"])
+            yield event.plain_result(str(mapping["_error"]))
             return
 
         area = mapping["area"]
-        channel = mapping.get("channel") or ""
-        label = mapping.get("label") or channel or "语音频道"
+        label = mapping.get("label") or "语音频道"
 
         parts: list[str] = []
         try:
@@ -161,14 +182,8 @@ class OoptraPlugin(Star):
             parts.append(f"语音状态：获取失败（{exc}）")
 
         try:
-            if not channel:
-                parts.append(
-                    f"当前绑定域：{area}\n未配置默认频道。请管理员 /语音绑定 <域ID> <频道ID> 补全，"
-                    "或使用 /进语音 <频道ID>（需允许自定义频道）。"
-                )
-            else:
-                data = await self.client.members(area, channel)
-                parts.append(format_members(data, label=label))
+            data = await self.client.channels(area)
+            parts.append(format_channel_counts(data, label=label))
         except OoptraError as exc:
             parts.append(self._err(exc))
 
@@ -255,45 +270,75 @@ class OoptraPlugin(Star):
 
     # ---------- 指令：进退房 ----------
 
-    def _resolve_join_target(
+    async def _resolve_join_target(
         self,
         event: AstrMessageEvent,
         mapping: dict[str, str],
         channel_arg: str,
-    ) -> tuple[str | None, str | None, str | None]:
-        """返回 (area, channel, error)。"""
+    ) -> tuple[str | None, str | None, str | None, str | None]:
+        """返回 (area, channel_id, channel_name, error)。
+
+        不带参数时进默认频道；指定参数时可填频道名或频道 ID。
+        """
         area = mapping.get("area") or ""
         bound = (mapping.get("channel") or "").strip()
         requested = (channel_arg or "").strip()
+        default_channel = str(mapping.get("_default_channel") or "").strip()
 
         if not area:
-            return None, None, "当前映射缺少域 ID，请先 /语音绑定"
+            return None, None, None, "当前映射缺少域 ID，请先 /语音绑定"
 
         if not requested:
             if not bound:
-                return None, None, (
-                    "未配置默认语音频道。\n"
-                    "用法：/进语音 <频道ID>（需允许自定义频道）\n"
-                    "或先 /语音绑定 <域ID> <频道ID>"
-                )
-            return area, bound, None
+                if not default_channel:
+                    return None, None, None, (
+                        "未配置默认语音频道。\n"
+                        "可在 Ooptra 控制台「语音台 → 会话控制」点「设为默认」，\n"
+                        "或用 /进语音 <频道名> 指定，或先 /语音绑定 <域ID> <频道ID>"
+                    )
+                return area, default_channel, default_channel, None
+            return area, bound, mapping.get("label") or bound, None
 
         if requested == bound:
-            return area, bound, None
+            return area, bound, mapping.get("label") or bound, None
 
-        if not looks_like_id(requested):
-            return None, None, "频道 ID 格式不正确。"
+        # 已是形如 ID 的绑定值，直接走 ID 路径
+        if looks_like_id(requested) and not looks_like_label(requested):
+            if not self._allow_arbitrary_channel() and not self._is_admin(event):
+                return None, None, None, (
+                    "默认仅允许进入本群绑定的频道。\n"
+                    "可让管理员：/语音绑定 更新默认频道，或由管理员使用 /进语音 <频道名>"
+                )
+            return area, requested, requested, None
 
-        if not self._allow_arbitrary_channel() and not self._is_admin(event):
-            return None, None, (
-                "默认仅允许进入本群绑定的频道。\n"
-                "可让管理员：/语音绑定 更新默认频道，或由管理员使用 /进语音 <频道ID>"
+        # 按频道名（或 ID）到域内频道表里找
+        try:
+            data = await self.client.channels(area)
+        except OoptraError as exc:
+            return None, None, None, self._err(exc)
+        rows = channel_rows(data)
+        hit = resolve_channel(rows, requested)
+        if hit is None:
+            names = "、".join(r["name"] for r in rows[:12] if r.get("name")) or "（无）"
+            return None, None, None, (
+                f"未找到频道「{requested}」。\n该域可用频道：{names}"
             )
-        return area, requested, None
+
+        target_id = hit.get("id") or ""
+        target_name = hit.get("name") or target_id
+        if not target_id:
+            return None, None, None, f"频道「{target_name}」缺少 ID，无法进入。"
+
+        if target_id != bound and not self._allow_arbitrary_channel() and not self._is_admin(event):
+            return None, None, None, (
+                "默认仅允许进入本群绑定的频道。\n"
+                "可让管理员：/语音绑定 更新默认频道，或由管理员使用 /进语音 <频道名>"
+            )
+        return area, target_id, target_name, None
 
     @filter.command("进语音", alias={"加入语音", "voice_join"})
     async def voice_join(self, event: AstrMessageEvent, channel: str = ""):
-        """让 Bot 进入本群绑定的 Oopz 语音频道。管理员可指定其他频道 ID。"""
+        """让 Bot 进入本群默认频道；也可 /进语音 <频道名或频道ID> 指定其他频道。"""
         if not self._can_control_voice(event):
             yield event.plain_result("当前不允许进语音（见插件配置 allow_join / join_admin_only）。")
             return
@@ -303,12 +348,12 @@ class OoptraPlugin(Star):
             yield event.plain_result(cooldown)
             return
 
-        mapping = self._require_mapping(event)
+        mapping = await self._require_mapping(event)
         if mapping.get("_error"):
-            yield event.plain_result(mapping["_error"])
+            yield event.plain_result(str(mapping["_error"]))
             return
 
-        area, target_channel, err = self._resolve_join_target(event, mapping, channel)
+        area, target_channel, target_name, err = await self._resolve_join_target(event, mapping, channel)
         if err:
             yield event.plain_result(err)
             return
@@ -321,9 +366,9 @@ class OoptraPlugin(Star):
                 return
             self._mark_voice_op()
 
-        label = mapping.get("label") or target_channel
+        shown = target_name or mapping.get("label") or target_channel
         yield event.plain_result(
-            f"已请求进入语音：{label}（{area} / {target_channel}）\n详情：{result}"
+            f"已请求进入语音：{shown}（{area} / {target_channel}）\n详情：{result}"
         )
 
     @filter.command("退语音", alias={"离开语音", "voice_leave"})
@@ -359,7 +404,11 @@ class OoptraPlugin(Star):
             yield event.plain_result(
                 "无法访问 Ooptra VOICE_API。\n"
                 f"原因：{exc}\n"
-                "检查：1) Ooptra 是否已启用 VOICE_API  2) api_base/token 是否一致  3) 防火墙"
+                "检查：1) Ooptra 是否已启用 VOICE_API  "
+                "2) api_base 是否正确  "
+                "3) api_token 是否与 Ooptra 侧一致"
+                "（默认填 WEBUI_CONFIG.token，独立 VOICE_API 则填 VOICE_API_CONFIG.token）  "
+                "4) 防火墙"
             )
 
     @filter.command("语音帮助", alias={"ooptra_help", "语音指令"})
@@ -367,8 +416,8 @@ class OoptraPlugin(Star):
         """查看 Oopz 语音桥指令说明。"""
         lines = [
             "Oopz 语音桥指令",
-            "· /语音状态 — 查人数与状态（别名：语音人数）",
-            "· /进语音 [频道ID] — Bot 进语音（默认仅绑定频道）",
+            "· /语音状态 — 查各频道在线人数（别名：语音人数）",
+            "· /进语音 [频道名|频道ID] — 进默认频道，或指定频道",
             "· /退语音 — Bot 退语音",
             "· /语音绑定 <域ID> [频道ID] [备注] —（管理）绑群",
             "· /语音解绑 —（管理）解绑",
@@ -417,11 +466,11 @@ class OoptraPlugin(Star):
 
     @filter.llm_tool(name="join_oopz_voice")
     async def tool_join(self, event: AstrMessageEvent, area: str = "", channel: str = "") -> str:
-        """让 Bot 加入 Oopz 语音频道（默认仅本群绑定频道）。
+        """让 Bot 加入 Oopz 语音频道（默认进本群默认频道，也可按频道名指定）。
 
         Args:
             area(string): Oopz 域 ID；可为空则用当前群绑定
-            channel(string): Oopz 频道 ID；可为空则用当前群绑定
+            channel(string): Oopz 频道名或频道 ID；可为空则用默认频道
         """
         if not self._llm_tools_enabled():
             return "LLM 语音工具已禁用。"
@@ -433,23 +482,28 @@ class OoptraPlugin(Star):
         try:
             raw_a, raw_c = (area or "").strip(), (channel or "").strip()
             if raw_a or raw_c:
-                bound = self._mapping(event) or {}
+                defaults = await self._ooptra_defaults()
+                bound = self._mapping(event, preferred_area=defaults.get("default_area", "")) or {}
                 if not (self._allow_arbitrary_channel() or self._is_admin(event)):
                     if raw_a and raw_a != (bound.get("area") or ""):
                         return "默认不允许加入未绑定的域。"
-                    if raw_c and raw_c != (bound.get("channel") or ""):
+                    if raw_c and raw_c not in {
+                        bound.get("channel") or "",
+                        bound.get("_default_channel") or "",
+                        defaults.get("default_channel", ""),
+                    }:
                         return "默认不允许加入未绑定的频道。"
                 a, c = raw_a or "", raw_c or ""
                 if not a or not c:
                     filled_a, filled_c = self._resolve_area_channel(event, a, c)
                     a, c = a or filled_a, c or filled_c
             else:
-                mapping = self._require_mapping(event)
+                mapping = await self._require_mapping(event)
                 if mapping.get("_error"):
-                    return mapping["_error"]
-                a, c, err = self._resolve_join_target(event, mapping, "")
+                    return str(mapping["_error"])
+                a, c, _name, err = await self._resolve_join_target(event, mapping, "")
                 if err:
-                    return err
+                    return str(err)
             if not a or not c:
                 return "缺少 area/channel，且当前会话未绑定完整默认频道。"
             async with self._voice_op_lock:

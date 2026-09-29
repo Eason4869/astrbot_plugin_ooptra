@@ -11,7 +11,7 @@
     "type": "string",
     "default": "",
     "secret": true,
-    "hint": "与 Ooptra 侧 token 一致；两边都留空则不校验"
+    "hint": "与 Ooptra 的 WEBUI_CONFIG.token 一致（VOICE_API 默认挂在 WebUI 同端口）；若开了独立 VOICE_API_CONFIG 则填那边的 token。两边都留空则不校验"
   },
   "timeout_sec": {
     "description": "HTTP 超时（秒）",
@@ -22,7 +22,7 @@
     "description": "QQ 群 → Oopz 域/频道映射",
     "type": "dict",
     "default": {},
-    "hint": "键为 QQ 群号。值：{\"area\": \"域ID\", \"channel\": \"频道ID\", \"label\": \"备注\"}。也可用 /语音绑定 写入。"
+    "hint": "键为 QQ 群号。值：{\"area\": \"域ID\", \"channel\": \"频道ID\", \"label\": \"备注\"}；一群多域用 \"areas\": [\"ID1\",\"ID2\"]（按 Ooptra 默认域择一）。也可用 /语音绑定 写入。"
   },
   "allow_join": {
     "description": "允许触发进/退语音",

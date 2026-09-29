@@ -3,10 +3,13 @@
 API 契约（Ooptra 侧 VOICE_API）：
   GET  /voice/status
   GET  /voice/members?area=&channel=
+  GET  /voice/channels?area=          # 域内语音频道 + 在线人数
   POST /voice/join   {"area": "...", "channel": "..."}
   POST /voice/leave  {}
   GET  /health
 鉴权：Authorization: Bearer <token>（token 为空则不发送）。
+token 与 Ooptra 侧保持一致：VOICE_API 默认挂在 WebUI 同端口，填 WEBUI_CONFIG.token；
+若单独启用了 VOICE_API_CONFIG（独立端口），则填 VOICE_API_CONFIG.token。两边都留空则不校验。
 """
 
 from __future__ import annotations
@@ -72,7 +75,11 @@ class OoptraClient:
             raise OoptraError(f"无法连接 Ooptra VOICE_API：{exc}") from exc
 
         if resp.status_code == 401:
-            raise OoptraError("Ooptra API 鉴权失败，请检查 api_token", status_code=401)
+            raise OoptraError(
+                "Ooptra API 鉴权失败：api_token 需与 Ooptra 侧一致"
+                "（默认填 WEBUI_CONFIG.token，独立 VOICE_API 则填 VOICE_API_CONFIG.token）",
+                status_code=401,
+            )
         if resp.status_code == 404:
             raise OoptraError(
                 "Ooptra 未提供该接口（请确认已启用 VOICE_API，或升级 Ooptra）",
@@ -118,6 +125,15 @@ class OoptraClient:
         )
         return data if isinstance(data, dict) else {"raw": data}
 
+    async def channels(self, area: str) -> dict[str, Any]:
+        """查询域内语音频道与在线人数。"""
+        data = await self._request(
+            "GET",
+            "/voice/channels",
+            params={"area": area},
+        )
+        return data if isinstance(data, dict) else {"raw": data}
+
     async def join(self, area: str, channel: str) -> dict[str, Any]:
         data = await self._request(
             "POST",
@@ -153,12 +169,36 @@ def looks_like_id(text: str) -> bool:
     return bool(text) and bool(_ID_SAFE_RE.match(text)) and not looks_like_label(text)
 
 
-def resolve_group_mapping(group_map: Any, group_id: str | None) -> dict[str, str] | None:
+def _as_area_list(value: Any) -> list[str]:
+    """把 area 字段归一成 ID 列表：支持单值、列表、逗号/顿号分隔字符串。"""
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple)):
+        return [str(v).strip() for v in value if str(v).strip()]
+    text = str(value).strip()
+    if not text:
+        return []
+    if "," in text or "、" in text:
+        parts = re.split(r"[,、]", text)
+        return [p.strip() for p in parts if p.strip()]
+    return [text]
+
+
+def resolve_group_mapping(
+    group_map: Any,
+    group_id: str | None,
+    *,
+    preferred_area: str = "",
+) -> dict[str, Any] | None:
     """从 group_map 解析当前 QQ 群绑定的 Oopz 目标。
 
-    兼容两种值形态：
+    兼容值形态：
       {"area": "...", "channel": "...", "label": "..."}
+      {"areas": ["id1", "id2"], "channel": "..."}   # 一群多域
       或简单字符串（视为 area:channel 或 area#channel）
+
+    一群绑了多个域时，优先取 preferred_area（通常是 Ooptra 的默认域），否则取第一个。
+    返回值里 area 是选中的那个，areas 是全部候选。
     """
     if not group_id or not isinstance(group_map, dict):
         return None
@@ -181,16 +221,34 @@ def resolve_group_mapping(group_map: Any, group_id: str | None) -> dict[str, str
             area, channel = text.split("#", 1)
         else:
             area, channel = text, ""
-        return {"area": area.strip(), "channel": channel.strip(), "label": ""}
+        areas = _as_area_list(area.strip())
+        return _pick_area(areas, channel.strip(), "", preferred_area)
 
     if isinstance(raw, dict):
-        return {
-            "area": str(raw.get("area") or "").strip(),
-            "channel": str(raw.get("channel") or "").strip(),
-            "label": str(raw.get("label") or "").strip(),
-        }
+        areas = _as_area_list(raw.get("areas") if raw.get("areas") is not None else raw.get("area"))
+        return _pick_area(
+            areas,
+            str(raw.get("channel") or "").strip(),
+            str(raw.get("label") or "").strip(),
+            preferred_area,
+        )
 
     return None
+
+
+def _pick_area(
+    areas: list[str],
+    channel: str,
+    label: str,
+    preferred_area: str,
+) -> dict[str, Any] | None:
+    if not areas:
+        return {"area": "", "areas": [], "channel": channel, "label": label}
+    chosen = areas[0]
+    pref = (preferred_area or "").strip()
+    if pref and pref in areas:
+        chosen = pref
+    return {"area": chosen, "areas": areas, "channel": channel, "label": label}
 
 
 def _is_muted_boolish(value: Any) -> bool | None:
@@ -285,3 +343,61 @@ def format_status(payload: dict[str, Any]) -> str:
     channel = payload.get("channel") or "?"
     state = payload.get("state") or payload.get("voice_state") or "-"
     return f"语音：已在房\n域/频道：{area} / {channel}\n状态：{state}"
+
+
+def channel_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """把 /voice/channels 响应归一成 [{id, name, count}]。"""
+    rows = payload.get("channels")
+    if not isinstance(rows, list):
+        return []
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        try:
+            count = int(row.get("count") or 0)
+        except (TypeError, ValueError):
+            count = 0
+        out.append(
+            {
+                "id": str(row.get("id") or ""),
+                "name": str(row.get("name") or row.get("id") or ""),
+                "count": count,
+            }
+        )
+    return out
+
+
+def format_channel_counts(payload: dict[str, Any], *, label: str = "") -> str:
+    """把 /voice/channels 排成「有人的频道 + 人数」群消息文本。"""
+    rows = channel_rows(payload)
+    occupied = [r for r in rows if r["count"] > 0]
+    title = label or "有人的语音频道"
+    lines = [f"【{title}】"]
+    if not occupied:
+        lines.append("当前没有人在语音频道。")
+        if rows:
+            lines.append(f"（该域共 {len(rows)} 个语音频道）")
+        return "\n".join(lines)
+
+    total = sum(r["count"] for r in occupied)
+    lines.append(f"共 {len(occupied)} 个频道有人（合计 {total} 人）：")
+    for row in occupied:
+        lines.append(f"· {row['name']} {row['count']}人")
+    return "\n".join(lines)
+
+
+def resolve_channel(rows: list[dict[str, Any]], name_or_id: str) -> dict[str, Any] | None:
+    """按频道名或 ID 找频道；优先精确名，再精确 ID，最后模糊名。"""
+    text = (name_or_id or "").strip()
+    if not text:
+        return None
+    for row in rows:
+        if row.get("name") == text or row.get("id") == text:
+            return row
+    lowered = text.lower()
+    for row in rows:
+        name = (row.get("name") or "").lower()
+        if lowered and lowered in name:
+            return row
+    return None
