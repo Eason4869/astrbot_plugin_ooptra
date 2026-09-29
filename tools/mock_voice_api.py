@@ -3,7 +3,7 @@
 用法（标准库，无需额外依赖）：
   python mock_voice_api.py [port]
 
-默认 3091。响应体与 Ooptra 契约一致。
+默认 3090。响应体与 Ooptra 契约一致。
 """
 
 from __future__ import annotations
@@ -82,7 +82,7 @@ class Handler(BaseHTTPRequestHandler):
 def main() -> None:
     import sys
 
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else 3091
+    port = int(sys.argv[1]) if len(sys.argv) > 1 else 3090
     server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     print(f"mock Ooptra VOICE_API on http://127.0.0.1:{port}")
     server.serve_forever()

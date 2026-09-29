@@ -2,7 +2,7 @@
   "api_base": {
     "description": "Ooptra VOICE_API 地址",
     "type": "string",
-    "default": "http://127.0.0.1:3091",
+    "default": "http://127.0.0.1:3090",
     "hint": "Ooptra 侧 VOICE_API_CONFIG 的 host:port，末尾不要斜杠",
     "obvious_hint": true
   },

@@ -2,13 +2,13 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号尽量符合 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [Unreleased]
+## [0.1.1] - 2026-09-29
 
-### 计划
+### Changed
 
-- 对接 Ooptra 侧真实 `VOICE_API`（项目 1：P0 配置 + P1 HTTP）
-- QQ 群 / Oopz 身份映射，便于共享记忆（方案 B）
-- 语音字幕转发到文字频道
+- `api_base` 默认值改为 `http://127.0.0.1:3090`（与 Ooptra WebUI 同源，便于后续统一合并）
+- 插件展示名改为 **Oopz 语音桥**（含 “Oopz” 标识）
+- 文档与 mock 默认端口同步为 `3090`
 
 ## [0.1.0] - 2026-09-29
 
@@ -36,5 +36,5 @@
 - 本插件是 [Ooptra](https://github.com/Eason4869/Ooptra) 的**配套插件**，推荐与 Ooptra 配合使用
 - 依赖 AstrBot `>= 4.16`，消息平台建议 aiocqhttp / QQ 官方机器人
 
-[Unreleased]: https://github.com/Eason4869/astrbot_plugin_ooptra/compare/v0.1.0...HEAD
+[0.1.1]: https://github.com/Eason4869/astrbot_plugin_ooptra/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/Eason4869/astrbot_plugin_ooptra/releases/tag/v0.1.0

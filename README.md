@@ -4,7 +4,7 @@
 >
 > **推荐与 [Ooptra](https://github.com/Eason4869/Ooptra) 配合使用**：Ooptra 负责 Oopz ↔ OneBot 文字桥接与语音进房，本插件负责 QQ 侧指令与群映射。单独使用本插件无法进语音（需要 Ooptra 提供 VOICE_API）。
 
-**Ooptra 语音桥 · QQ ↔ Oopz**
+**Oopz 语音桥 · QQ ↔ Oopz**
 
 在 QQ 群里查语音人数、看状态，一键让 Bot 进/退 Oopz 语音频道。
 
@@ -52,7 +52,7 @@ Ooptra  ◄── Oopz 文字消息
 
 ## 前置条件
 
-1. 已安装并运行 **[Ooptra](https://github.com/Eason4869/Ooptra)**，且启用 `VOICE_API`（默认 `http://127.0.0.1:3091`）
+1. 已安装并运行 **[Ooptra](https://github.com/Eason4869/Ooptra)**，且启用 `VOICE_API`（默认 `http://127.0.0.1:3090`）
 2. **AstrBot ≥ 4.16**，已接入 QQ（aiocqhttp / QQ 官方机器人）
 3. 本插件依赖 `httpx`
 
@@ -86,7 +86,7 @@ Ooptra  ◄── Oopz 文字消息
    ```
 
 3. 在 AstrBot **WebUI → 插件** 中启用 `astrbot_plugin_ooptra`，配置：
-   - `api_base`：Ooptra VOICE_API 地址（默认 `http://127.0.0.1:3091`）
+   - `api_base`：Ooptra VOICE_API 地址（默认 `http://127.0.0.1:3090`）
    - `api_token`：与 Ooptra `VOICE_API_CONFIG.token` 一致
 
 4. 在目标 QQ 群发送：
@@ -103,7 +103,7 @@ Ooptra  ◄── Oopz 文字消息
 
 | 配置 | 默认 | 说明 |
 |------|------|------|
-| `api_base` | `http://127.0.0.1:3091` | Ooptra VOICE_API 根地址，末尾不要 `/` |
+| `api_base` | `http://127.0.0.1:3090` | Ooptra VOICE_API 根地址，末尾不要 `/` |
 | `api_token` | 空 | Bearer 令牌，与 Ooptra 侧一致 |
 | `timeout_sec` | `8` | HTTP 超时（秒） |
 | `group_map` | `{}` | QQ 群号 → Oopz 映射，也可用 `/语音绑定` 写入 |
@@ -148,7 +148,7 @@ python -m unittest discover -s tests -v
 模拟 Ooptra API：
 
 ```bash
-python tools/mock_voice_api.py 3091
+python tools/mock_voice_api.py 3090
 ```
 
 在 AstrBot 中修改代码后，可在 WebUI 插件管理处 **重载插件** 热更新。

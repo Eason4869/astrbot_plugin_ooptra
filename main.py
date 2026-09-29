@@ -1,4 +1,4 @@
-"""Ooptra 语音桥 — 在 QQ 查询/管理 Oopz 语音频道。
+"""Oopz 语音桥 — 在 QQ 查询/管理 Oopz 语音频道。
 
 依赖 Ooptra 侧 VOICE_API（项目 1）契约：
   GET  /voice/status
@@ -35,7 +35,7 @@ class OoptraPlugin(Star):
 
     def _build_client(self) -> OoptraClient:
         return OoptraClient(
-            base_url=str(self.config.get("api_base") or "http://127.0.0.1:3091"),
+            base_url=str(self.config.get("api_base") or "http://127.0.0.1:3090"),
             token=str(self.config.get("api_token") or ""),
             timeout=float(self.config.get("timeout_sec") or 8.0),
         )
@@ -47,7 +47,7 @@ class OoptraPlugin(Star):
     @property
     def client(self) -> OoptraClient:
         # 配置热更后重建，避免 token/base 陈旧
-        base = str(self.config.get("api_base") or "http://127.0.0.1:3091")
+        base = str(self.config.get("api_base") or "http://127.0.0.1:3090")
         token = str(self.config.get("api_token") or "")
         timeout = float(self.config.get("timeout_sec") or 8.0)
         if (
@@ -243,12 +243,12 @@ class OoptraPlugin(Star):
 
     @filter.command("语音帮助", alias={"ooptra_help", "语音指令"})
     async def voice_help(self, event: AstrMessageEvent):
-        """查看 Ooptra 语音桥指令说明。"""
+        """查看 Oopz 语音桥指令说明。"""
         status_cmd = self.config.get("cmd_voice_status") or "语音状态"
         join_cmd = self.config.get("cmd_voice_join") or "进语音"
         leave_cmd = self.config.get("cmd_voice_leave") or "退语音"
         yield event.plain_result(
-            "Ooptra 语音桥指令\n"
+            "Oopz 语音桥指令\n"
             f"· /{status_cmd} — 查人数与状态\n"
             f"· /{join_cmd} [频道ID] — Bot 进语音\n"
             f"· /{leave_cmd} — Bot 退语音\n"
