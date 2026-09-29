@@ -1,0 +1,58 @@
+{
+  "api_base": {
+    "description": "Ooptra VOICE_API 地址",
+    "type": "string",
+    "default": "http://127.0.0.1:3091",
+    "hint": "Ooptra 侧 VOICE_API_CONFIG 的 host:port，末尾不要斜杠",
+    "obvious_hint": true
+  },
+  "api_token": {
+    "description": "VOICE_API 访问令牌",
+    "type": "string",
+    "default": "",
+    "secret": true,
+    "hint": "与 Ooptra VOICE_API_CONFIG.token 一致；两边都留空则不校验"
+  },
+  "timeout_sec": {
+    "description": "HTTP 超时（秒）",
+    "type": "float",
+    "default": 8.0
+  },
+  "group_map": {
+    "description": "QQ 群 → Oopz 域/频道映射",
+    "type": "dict",
+    "default": {},
+    "hint": "键为 QQ 群号（字符串）。值示例：{\"area\": \"域ID\", \"channel\": \"频道ID\", \"label\": \"开黑房\"}。channel 可为空，进房时再指定。"
+  },
+  "allow_join": {
+    "description": "允许群成员触发进语音",
+    "type": "bool",
+    "default": true
+  },
+  "join_admin_only": {
+    "description": "进/退语音仅管理员可用",
+    "type": "bool",
+    "default": false
+  },
+  "cmd_voice_status": {
+    "description": "语音状态指令名",
+    "type": "string",
+    "default": "语音状态",
+    "hint": "别名固定包含：语音人数、voice_status"
+  },
+  "cmd_voice_join": {
+    "description": "进语音指令名",
+    "type": "string",
+    "default": "进语音"
+  },
+  "cmd_voice_leave": {
+    "description": "退语音指令名",
+    "type": "string",
+    "default": "退语音"
+  },
+  "enable_llm_tools": {
+    "description": "注册 LLM 工具（模型可自行查语音）",
+    "type": "bool",
+    "default": true
+  }
+}

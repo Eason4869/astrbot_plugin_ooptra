@@ -1,0 +1,12 @@
+name: astrbot_plugin_ooptra
+display_name: Ooptra 语音桥
+desc: 在 QQ 查询/管理 Oopz 语音频道人数与状态，支持进退语音；通过 Ooptra VOICE_API 对接。
+short_desc: QQ 查 Oopz 语音人数，一键进退语音房
+version: 0.1.0
+author: Eason4869
+homepage: https://github.com/Eason4869/astrbot_plugin_ooptra
+astrbot_version: ">=4.16"
+support_platforms:
+  - aiocqhttp
+  - qq_official
+  - qq_official_webhook
