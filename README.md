@@ -3,6 +3,8 @@
 > **Ooptra 配套插件。** 本插件用于 [AstrBot](https://github.com/AstrBotDevs/AstrBot)，通过 HTTP 调用 [Ooptra](https://github.com/Eason4869/Ooptra) 的 `VOICE_API`，让你在 **QQ** 里查询 / 管理 **Oopz 语音频道**。
 >
 > **推荐与 [Ooptra](https://github.com/Eason4869/Ooptra) 配合使用**：Ooptra 负责 Oopz ↔ OneBot 文字桥接与语音进房，本插件负责 QQ 侧指令与群映射。单独使用本插件无法进语音（需要 Ooptra 提供 VOICE_API）。
+>
+> **需要 Ooptra ≥ 2.0.0**（`GET /voice/channels` 从 2.0.0 起才有）。用 `/语音自检` 可以逐条确认。
 
 **Oopz 语音桥 · QQ ↔ Oopz**
 
@@ -19,12 +21,13 @@
 | `/退语音` | Bot 退出语音 | 可配置 |
 | `/语音绑定 <域ID> [频道ID] [备注]` | 将当前 QQ 群绑定到 Oopz 域/频道 | 管理员 |
 | `/语音解绑` | 解除当前群绑定 | 管理员 |
-| `/语音自检` | 检测 Ooptra VOICE_API 连通性 | 全员 |
+| `/语音自检` | 检测连通性并逐条探测契约端点 | 全员 |
 | `/语音帮助` | 指令说明 | 全员 |
 
 **默认目标**：在 Ooptra 控制台「语音台 → 会话控制」选中域/频道后点**「设为默认」**，即写入 `OOPZ_CONFIG.default_area` / `default_channel`。
 - `/进语音` 不带参数时进**默认频道**（群绑定里没填频道时也用它）
-- 一个 QQ 群绑了多个域（`group_map` 里 `areas` 为列表）时，状态查询与进房按**默认域**择一
+- 一个 QQ 群绑了多个域（`group_map` 里 `areas` 为列表）时，状态查询、进房与 LLM 工具都按**默认域**择一
+- **跨域保护**：Ooptra 的默认频道属于它的默认**域**。若本群绑的是别的域，该默认频道不会被采用（进房前还会到域内频道表核实一次），避免误入其他域的房间
 
 可选 LLM 工具（`enable_llm_tools`）：
 
@@ -55,7 +58,7 @@ Ooptra  ◄── Oopz 文字消息
 
 ## 前置条件
 
-1. 已运行 **[Ooptra](https://github.com/Eason4869/Ooptra)**，并启用 `VOICE_API`（默认与 WebUI 同源：`http://127.0.0.1:3090`）
+1. 已运行 **[Ooptra](https://github.com/Eason4869/Ooptra) ≥ 2.0.0**，并启用 `VOICE_API`（默认与 WebUI 同源：`http://127.0.0.1:3090`）
 2. **AstrBot ≥ 4.16**，已接入 QQ（aiocqhttp / QQ 官方机器人）
 3. 依赖 `httpx`
 
@@ -63,17 +66,21 @@ Ooptra  ◄── Oopz 文字消息
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/health` | 健康检查（可选，失败会回退 `/voice/status`） |
+| GET | `/health` | 健康检查；**仅当服务不认识该端点（404/405/501）时**才回退 `/voice/status` |
 | GET | `/voice/status` | Bot 是否在语音房（含默认域/默认频道） |
-| GET | `/voice/channels?area=` | 域内语音频道与在线人数 |
-| GET | `/voice/members?area=&channel=` | 频道在线人数与成员 |
+| GET | `/voice/channels?area=` | 域内语音频道与在线人数（**需 Ooptra ≥ 2.0.0**） |
+| GET | `/voice/members?area=&channel=` | 频道在线人数与成员（`channel` 留空表示整域汇总） |
 | POST | `/voice/join` | Body: `{"area","channel"}` |
 | POST | `/voice/leave` | 退出语音 |
 | — | `Authorization: Bearer <token>` | 与 Ooptra 侧令牌一致；两边都留空则不校验 |
 
-成员字段兼容 `mic`/`speaker` 或 `m`/`hm`（0=闭，1=开）。
+成员字段兼容 `mic`/`speaker` 或 `m`/`hm`（0=闭，1=开）；Oopz 不返回静音状态时字段为 `null`（未知，不会伪造成「开麦」）。
 
-**令牌对齐**：VOICE_API 默认挂在 Ooptra WebUI 同端口（`3090`），鉴权走 **`WEBUI_CONFIG.token`**；只有单独打开 `VOICE_API_CONFIG`（独立端口）时才用 **`VOICE_API_CONFIG.token`**。本插件的 `api_token` 填其中生效的那个即可，两边都留空则不校验。
+**端口选哪个**：用 **`3090`**（Ooptra WebUI 端口，已含全部 VOICE_API）。Ooptra 2.0.0 起，可选的独立端口 `3091`（`VOICE_API_CONFIG`）与 `3090` **路由完全统一**，用哪个都行，但没必要多开一个。
+
+**令牌对齐**：走 `3090` 时鉴权用 **`WEBUI_CONFIG.token`**；只有单独开了 `VOICE_API_CONFIG`（`3091`）时才用 **`VOICE_API_CONFIG.token`**。本插件的 `api_token` 填其中生效的那个，两边都留空则不校验。
+
+> 本插件的 HTTP 请求固定 `trust_env=False`：httpx 与 requests 不同，**不会**自动绕过 localhost 代理。否则系统里只要有 `HTTP_PROXY`，发往 `127.0.0.1` 的请求就会被送去代理（报「无法连接」且令牌外泄）。
 
 > 未实现 VOICE_API 时可用 `tools/mock_voice_api.py` 联调（**mock 不校验 token**）。
 
@@ -109,8 +116,8 @@ Ooptra  ◄── Oopz 文字消息
 
 | 配置 | 默认 | 说明 |
 |------|------|------|
-| `api_base` | `http://127.0.0.1:3090` | VOICE_API 根地址（默认与 Ooptra WebUI 同源） |
-| `api_token` | 空 | Bearer 令牌；填 Ooptra 的 `WEBUI_CONFIG.token`（默认），或独立 VOICE_API 时的 `VOICE_API_CONFIG.token` |
+| `api_base` | `http://127.0.0.1:3090` | VOICE_API 根地址（推荐 3090，= Ooptra WebUI 端口，已含全部 VOICE_API） |
+| `api_token` | 空 | Bearer 令牌；填 Ooptra 的 `WEBUI_CONFIG.token`（用 3090 时），或独立 VOICE_API 时的 `VOICE_API_CONFIG.token` |
 | `timeout_sec` | `8` | HTTP 超时（秒），≤0 时回退 8 |
 | `group_map` | `{}` | QQ 群号 → `{area, channel, label}` |
 | `allow_join` | `true` | 是否允许进/退语音 |
@@ -151,6 +158,8 @@ Ooptra  ◄── Oopz 文字消息
 ## 安全默认
 
 - 进房默认**只允许本群绑定的频道**，减少误入/滥用
+- **跨域保护**：Ooptra 的默认频道不会把 Bot 带进本群绑定域之外的房间
+- 请求固定 `trust_env=False`，令牌不会因为系统代理而外泄给第三方
 - 进/退语音有约 3 秒冷却，降低刷指令
 - `api_token` 在 WebUI 中掩码显示
 - 绑定 / 解绑需管理员
@@ -161,17 +170,20 @@ Ooptra  ◄── Oopz 文字消息
 
 ```text
 astrbot_plugin_ooptra/
-├── main.py                 # 指令 + LLM 工具
-├── ooptra_client.py        # VOICE_API 客户端与格式化
+├── main.py                    # 指令 + LLM 工具
+├── ooptra_client.py           # VOICE_API 客户端与格式化
 ├── _conf_schema.json
 ├── metadata.yaml
-├── tools/mock_voice_api.py
-└── tests/test_client_unit.py
+├── tools/mock_voice_api.py    # 本地 mock（两域多频道，含 /voice/channels）
+└── tests/
+    ├── test_client_unit.py    # 纯函数
+    ├── test_client_http.py    # HTTP 分支（httpx.MockTransport）
+    └── test_main_logic.py     # 指令层（跨域保护/锁/文案/自检）
 ```
 
 ```bash
-python -m unittest discover -s tests -v
-python tools/mock_voice_api.py 3090
+python -m unittest discover -s tests -v     # 或 python -m pytest tests -q
+python tools/mock_voice_api.py 3099         # 换个端口，避免和真实 Ooptra 撞
 ```
 
 改代码后可在 AstrBot WebUI 重载插件。
@@ -181,7 +193,13 @@ python tools/mock_voice_api.py 3090
 ## 常见问题
 
 **无法访问 Ooptra VOICE_API**  
-查 Ooptra 是否启动、`api_base`/`api_token` 是否一致、防火墙。
+先跑 `/语音自检`。查 Ooptra 是否启动、`api_base`/`api_token` 是否一致、防火墙，以及**系统代理**（本插件已固定 `trust_env=False`，不受代理影响，但防火墙/端口仍可能拦）。
+
+**`/语音自检` 里 `❌ GET /voice/channels`**  
+Ooptra 版本低于 2.0.0，或 `api_base` 指向了别的服务。升级 Ooptra 到 2.0.0+ 即可。
+
+**`/进语音` 提示「默认频道不属于本群绑定的域」**  
+本群绑的域和 Ooptra 里「设为默认」的域不是同一个（多域群常见）。用 `/进语音 <频道名>` 指定，或 `/语音绑定 <域ID> <频道ID>` 绑到本域的频道。
 
 **鉴权失败 / 401**  
 `api_token` 要和 Ooptra 侧生效的令牌一致：默认是 Web 控制台的 `WEBUI_CONFIG.token`；若单独启用了 `VOICE_API_CONFIG`（独立端口），则是 `VOICE_API_CONFIG.token`。两边都留空表示不校验。

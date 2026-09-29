@@ -1,6 +1,6 @@
 """Oopz 语音桥 — 在 QQ 查询/管理 Oopz 语音频道。
 
-依赖 Ooptra 侧 VOICE_API 契约：
+依赖 Ooptra ≥ 2.0.0 的 VOICE_API 契约：
   GET  /voice/status
   GET  /voice/channels?area=        # 域内语音频道 + 在线人数
   GET  /voice/members?area=&channel=
@@ -115,9 +115,26 @@ class OoptraPlugin(Star):
             }
         if not mapping.get("area"):
             return {"_error": "当前群映射缺少 area（域 ID），请检查插件配置或重新 /语音绑定"}
-        mapping["_default_channel"] = defaults.get("default_channel", "")
-        mapping["_default_area"] = defaults.get("default_area", "")
+        mapping["_default_area"] = str(defaults.get("default_area") or "")
+        mapping["_default_channel"] = self._usable_default_channel(mapping, defaults)
         return mapping
+
+    @staticmethod
+    def _usable_default_channel(mapping: dict[str, Any], defaults: dict[str, str]) -> str:
+        """Ooptra 的 default_channel 属于**它的** default_area。
+
+        群绑的是别的域时，直接拿这个默认频道进房就是跨域（多域群必踩）。
+        只有域一致（或 Ooptra 没报默认域）才认它；真正进房前 `_resolve_join_target`
+        还会到域内频道表里再核一次。
+        """
+        channel = str(defaults.get("default_channel") or "").strip()
+        if not channel:
+            return ""
+        default_area = str(defaults.get("default_area") or "").strip()
+        area = str(mapping.get("area") or "").strip()
+        if default_area and area and default_area != area:
+            return ""
+        return channel
 
     def _is_admin(self, event: AstrMessageEvent) -> bool:
         try:
@@ -296,7 +313,19 @@ class OoptraPlugin(Star):
                         "可在 Ooptra 控制台「语音台 → 会话控制」点「设为默认」，\n"
                         "或用 /进语音 <频道名> 指定，或先 /语音绑定 <域ID> <频道ID>"
                     )
-                return area, default_channel, default_channel, None
+                # 跨域保护：默认频道未必属于本群绑定的域，进房前先在域内频道表里核实
+                try:
+                    data = await self.client.channels(area)
+                except OoptraError as exc:
+                    return None, None, None, self._err(exc)
+                hit = resolve_channel(channel_rows(data), default_channel)
+                if hit is None:
+                    return None, None, None, (
+                        "Ooptra 的默认频道不属于本群绑定的域，已拒绝进入以免跨域。\n"
+                        "请用 /进语音 <频道名> 指定，或 /语音绑定 <域ID> <频道ID>"
+                    )
+                target_id = str(hit.get("id") or default_channel)
+                return area, target_id, str(hit.get("name") or target_id), None
             return area, bound, mapping.get("label") or bound, None
 
         if requested == bound:
@@ -358,17 +387,22 @@ class OoptraPlugin(Star):
             yield event.plain_result(err)
             return
 
+        # yield 不能待在 async with 里：生成器一挂起，锁就被一直握着，
+        # 期间并发的 /退语音 会全部阻塞。
+        failure = ""
         async with self._voice_op_lock:
             try:
-                result = await self.client.join(area or "", target_channel or "")
+                await self.client.join(area or "", target_channel or "")
             except OoptraError as exc:
-                yield event.plain_result(self._err(exc))
-                return
-            self._mark_voice_op()
+                failure = self._err(exc)
+            else:
+                self._mark_voice_op()
+        if failure:
+            yield event.plain_result(failure)
+            return
 
-        shown = target_name or mapping.get("label") or target_channel
         yield event.plain_result(
-            f"已请求进入语音：{shown}（{area} / {target_channel}）\n详情：{result}"
+            f"已进语音：{target_name or mapping.get('label') or target_channel}"
         )
 
     @filter.command("退语音", alias={"离开语音", "voice_leave"})
@@ -383,33 +417,75 @@ class OoptraPlugin(Star):
             yield event.plain_result(cooldown)
             return
 
+        failure = ""
         async with self._voice_op_lock:
             try:
-                result = await self.client.leave()
+                await self.client.leave()
             except OoptraError as exc:
-                yield event.plain_result(self._err(exc))
-                return
-            self._mark_voice_op()
-        yield event.plain_result(f"已请求退出语音。\n详情：{result}")
+                failure = self._err(exc)
+            else:
+                self._mark_voice_op()
+        if failure:
+            yield event.plain_result(failure)
+            return
+        yield event.plain_result("已退出语音。")
 
     # ---------- 指令：连通性 / 帮助 ----------
 
     @filter.command("语音自检", alias={"ooptra_ping", "语音连接"})
     async def voice_ping(self, event: AstrMessageEvent):
-        """检查 Ooptra VOICE_API 连通性。"""
+        """检查 Ooptra VOICE_API 连通性，并逐条探测插件依赖的契约端点。"""
+        lines = [f"Ooptra VOICE_API：{self._api_base()}"]
         try:
             data = await self.client.health()
-            yield event.plain_result(f"Ooptra VOICE_API 正常。\n{data}")
         except OoptraError as exc:
-            yield event.plain_result(
-                "无法访问 Ooptra VOICE_API。\n"
-                f"原因：{exc}\n"
+            lines.append(f"❌ 无法访问：{exc}")
+            lines.append(
                 "检查：1) Ooptra 是否已启用 VOICE_API  "
-                "2) api_base 是否正确  "
-                "3) api_token 是否与 Ooptra 侧一致"
-                "（默认填 WEBUI_CONFIG.token，独立 VOICE_API 则填 VOICE_API_CONFIG.token）  "
+                "2) api_base 是否正确（3090 与 WebUI 同端口，已含全部 VOICE_API）  "
+                "3) api_token 是否与 Ooptra 侧一致（默认填 WEBUI_CONFIG.token）  "
                 "4) 防火墙"
             )
+            yield event.plain_result("\n".join(lines))
+            return
+
+        version = str(data.get("version") or "").strip()
+        lines.append(
+            "✅ 已连通"
+            + (f" · 版本 {version}" if version else "")
+            + f" · 数据来自 {data.get('via') or '/health'}"
+        )
+        if data.get("enabled") is False:
+            lines.append("⚠️ Ooptra 侧语音未启用（voice.enabled=false），进/退语音会失败")
+
+        mapping = await self._require_mapping(event)
+        area = "" if mapping.get("_error") else str(mapping.get("area") or "")
+        lines.append("")
+        lines.append("契约探测：")
+        lines.extend(await self._probe_contract(area))
+        lines.append("说明：/voice/channels 需 Ooptra ≥ 2.0.0，缺失请升级 Ooptra。")
+        yield event.plain_result("\n".join(lines))
+
+    async def _probe_contract(self, area: str) -> list[str]:
+        """逐条探测契约端点，把「服务不可用」与「服务缺端点」区分开。"""
+        calls: list[tuple[str, Any]] = [
+            ("GET /health", self.client.health),
+            ("GET /voice/status", self.client.status),
+        ]
+        if area:
+            calls.append(("GET /voice/channels", lambda: self.client.channels(area)))
+            calls.append(("GET /voice/members", lambda: self.client.members(area, "")))
+        out: list[str] = []
+        for label, call in calls:
+            try:
+                await call()
+            except OoptraError as exc:
+                out.append(f"❌ {label} — {exc}")
+            else:
+                out.append(f"✅ {label}")
+        if not area:
+            out.append("⚠️ 当前群未绑定域，已跳过 /voice/channels 与 /voice/members（/语音绑定 后可重试）")
+        return out
 
     @filter.command("语音帮助", alias={"ooptra_help", "语音指令"})
     async def voice_help(self, event: AstrMessageEvent):
@@ -421,7 +497,7 @@ class OoptraPlugin(Star):
             "· /退语音 — Bot 退语音",
             "· /语音绑定 <域ID> [频道ID] [备注] —（管理）绑群",
             "· /语音解绑 —（管理）解绑",
-            "· /语音自检 — 测 Ooptra 连接",
+            "· /语音自检 — 测 Ooptra 连接并逐条探测契约端点",
         ]
         if self.config.get("join_admin_only"):
             lines.append("进/退语音：仅管理员")
@@ -445,7 +521,7 @@ class OoptraPlugin(Star):
         if not self._llm_tools_enabled():
             return "LLM 语音工具已禁用。"
         try:
-            a, c = self._resolve_area_channel(event, area, channel)
+            a, c = await self._resolve_area_channel(event, area, channel)
             if not a or not c:
                 return "缺少 area/channel，且当前会话未绑定完整默认频道。"
             data = await self.client.members(a, c)
@@ -487,15 +563,15 @@ class OoptraPlugin(Star):
                 if not (self._allow_arbitrary_channel() or self._is_admin(event)):
                     if raw_a and raw_a != (bound.get("area") or ""):
                         return "默认不允许加入未绑定的域。"
-                    if raw_c and raw_c not in {
+                    allowed = {
                         bound.get("channel") or "",
-                        bound.get("_default_channel") or "",
-                        defaults.get("default_channel", ""),
-                    }:
+                        self._usable_default_channel(bound, defaults),
+                    }
+                    if raw_c and raw_c not in allowed:
                         return "默认不允许加入未绑定的频道。"
                 a, c = raw_a or "", raw_c or ""
                 if not a or not c:
-                    filled_a, filled_c = self._resolve_area_channel(event, a, c)
+                    filled_a, filled_c = await self._resolve_area_channel(event, a, c)
                     a, c = a or filled_a, c or filled_c
             else:
                 mapping = await self._require_mapping(event)
@@ -507,9 +583,9 @@ class OoptraPlugin(Star):
             if not a or not c:
                 return "缺少 area/channel，且当前会话未绑定完整默认频道。"
             async with self._voice_op_lock:
-                result = await self.client.join(a, c)
+                await self.client.join(a, c)
                 self._mark_voice_op()
-            return f"已请求进入 {a}/{c}。结果：{result}"
+            return f"已进语音：{c}"
         except OoptraError as exc:
             return f"进房失败：{exc}"
 
@@ -525,24 +601,34 @@ class OoptraPlugin(Star):
             return cooldown
         try:
             async with self._voice_op_lock:
-                result = await self.client.leave()
+                await self.client.leave()
                 self._mark_voice_op()
-            return f"已请求退出语音。结果：{result}"
+            return "已退出语音。"
         except OoptraError as exc:
             return f"退房失败：{exc}"
 
-    def _resolve_area_channel(
+    async def _resolve_area_channel(
         self, event: AstrMessageEvent, area: str, channel: str
     ) -> tuple[str, str]:
+        """给 LLM 工具补全缺省的 area/channel。
+
+        必须走 ``_require_mapping``：只有它会把 preferred_area（Ooptra 默认域）传进
+        ``resolve_group_mapping``。旧实现直接 ``self._mapping(event)``，多域群里会
+        挑到第一个域，与斜杠命令选中的域不一致（README 承诺按默认域择一）。
+        """
         a = (area or "").strip()
         c = (channel or "").strip()
         if a and c:
             return a, c
-        mapping = self._mapping(event) or {}
+        mapping = await self._require_mapping(event)
+        if mapping.get("_error"):
+            return a, c
         if not a:
             a = str(mapping.get("area") or "").strip()
         if not c:
-            c = str(mapping.get("channel") or "").strip()
+            c = str(mapping.get("channel") or "").strip() or str(
+                mapping.get("_default_channel") or ""
+            ).strip()
         return a, c
 
     # ---------- 生命周期 ----------

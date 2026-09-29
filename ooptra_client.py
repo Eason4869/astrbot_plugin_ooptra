@@ -1,6 +1,6 @@
 """Ooptra VOICE_API 异步客户端。
 
-API 契约（Ooptra 侧 VOICE_API）：
+API 契约（Ooptra ≥ 2.0.0 的 VOICE_API）：
   GET  /voice/status
   GET  /voice/members?area=&channel=
   GET  /voice/channels?area=          # 域内语音频道 + 在线人数
@@ -10,6 +10,12 @@ API 契约（Ooptra 侧 VOICE_API）：
 鉴权：Authorization: Bearer <token>（token 为空则不发送）。
 token 与 Ooptra 侧保持一致：VOICE_API 默认挂在 WebUI 同端口，填 WEBUI_CONFIG.token；
 若单独启用了 VOICE_API_CONFIG（独立端口），则填 VOICE_API_CONFIG.token。两边都留空则不校验。
+
+两条硬约束：
+  1. 请求**必须** trust_env=False（原因见 ``_request`` 内注释）。
+  2. 契约不符要**报错**，不能伪造成成功或空数据——旧版把非 dict 响应包成
+     {"raw": …}「假装成功」，而没有任何 formatter 读 raw，于是故障被显示成
+     「当前没有人在语音频道」。
 """
 
 from __future__ import annotations
@@ -19,7 +25,11 @@ from typing import Any
 
 _ERROR_BODY_MAX = 160
 _CJK_RE = re.compile(r"[一-鿿]")
-_ID_SAFE_RE = re.compile(r"^[\w.:-]{1,128}$")
+# 用 \Z 而非 $：$ 允许结尾换行，"abc\n" 会被误判成合法 ID
+_ID_SAFE_RE = re.compile(r"^[\w.:-]{1,128}\Z")
+
+# 只有这些状态码才值得从 /health 回退到 /voice/status（=服务不认识 /health）
+_HEALTH_FALLBACK_STATUS = frozenset({404, 405, 501})
 
 
 class OoptraError(Exception):
@@ -31,10 +41,19 @@ class OoptraError(Exception):
 
 
 class OoptraClient:
-    def __init__(self, base_url: str, token: str = "", timeout: float = 8.0):
+    def __init__(
+        self,
+        base_url: str,
+        token: str = "",
+        timeout: float = 8.0,
+        *,
+        transport: Any = None,
+    ):
+        """``transport`` 仅供测试注入（httpx.MockTransport），生产保持 None。"""
         self.base_url = (base_url or "").rstrip("/")
         self.token = (token or "").strip()
         self.timeout = timeout if timeout > 0 else 8.0
+        self._transport = transport
 
     def _headers(self) -> dict[str, str]:
         headers = {"Accept": "application/json"}
@@ -61,7 +80,15 @@ class OoptraClient:
         url = f"{self.base_url}{path}"
         timeout = httpx.Timeout(self.timeout)
         try:
-            async with httpx.AsyncClient(timeout=timeout, trust_env=True) as client:
+            # trust_env=False 是**必须**的：httpx 与 requests 不同，它**不会**自动
+            # 绕过 localhost 代理。开着 trust_env，系统里的 HTTP_PROXY/HTTPS_PROXY
+            # 会把 127.0.0.1 的请求也劫走——Ooptra 明明正常却报「无法连接」，
+            # 而且 Bearer token 与请求体会被完整交给代理。
+            async with httpx.AsyncClient(
+                timeout=timeout,
+                trust_env=False,
+                transport=self._transport,
+            ) as client:
                 resp = await client.request(
                     method,
                     url,
@@ -81,8 +108,12 @@ class OoptraClient:
                 status_code=401,
             )
         if resp.status_code == 404:
+            # 404 有三种完全不同的原因，必须让用户能分辨，否则只能瞎猜
             raise OoptraError(
-                "Ooptra 未提供该接口（请确认已启用 VOICE_API，或升级 Ooptra）",
+                f"Ooptra 未提供接口 {method} {path}。"
+                "可能原因：1) Ooptra 版本过旧（/voice/channels 需 ≥ 2.0.0）；"
+                "2) api_base 端口/路径写错；"
+                "3) 反向代理改写了路径",
                 status_code=404,
             )
         if resp.status_code >= 400:
@@ -92,12 +123,14 @@ class OoptraClient:
                 status_code=resp.status_code,
             )
 
+        # 空响应体不是「成功且无数据」：正常契约下每个端点都有 JSON body。
+        # 旧版在这里 return {}，于是代理/异常服务返回 200 空体时被当成成功。
         if not resp.content:
-            return {}
+            raise OoptraError(f"Ooptra 对 {method} {path} 返回了空响应体（服务可能异常或未就绪）")
         try:
             data = resp.json()
         except ValueError as exc:
-            raise OoptraError("Ooptra 返回的不是 JSON") from exc
+            raise OoptraError(f"Ooptra 对 {method} {path} 返回的不是 JSON") from exc
 
         if isinstance(data, dict) and data.get("ok") is False:
             err = data.get("error") or data.get("message") or "unknown"
@@ -105,17 +138,27 @@ class OoptraClient:
         return data
 
     async def health(self) -> dict[str, Any]:
+        """探活：优先 /health，仅当服务「不认识这个端点」时才回退 /voice/status。
+
+        旧实现除 401 外一律回退，于是服务真挂掉/超时时要白等两个 timeout，
+        而且 /语音自检 会把 status 载荷当成 health 打印。结果里带 ``via``
+        标明数据实际来自哪个端点。
+        """
         try:
             data = await self._request("GET", "/health")
-            return data if isinstance(data, dict) else {"ok": True}
+            result = _expect_mapping(data, "/health")
+            result["via"] = "/health"
+            return result
         except OoptraError as exc:
-            if exc.status_code == 401:
+            if exc.status_code not in _HEALTH_FALLBACK_STATUS:
                 raise
-            return await self._request("GET", "/voice/status")
+        data = await self._request("GET", "/voice/status")
+        result = _expect_mapping(data, "/voice/status")
+        result["via"] = "/voice/status"
+        return result
 
     async def status(self) -> dict[str, Any]:
-        data = await self._request("GET", "/voice/status")
-        return data if isinstance(data, dict) else {"raw": data}
+        return _expect_mapping(await self._request("GET", "/voice/status"), "/voice/status")
 
     async def members(self, area: str, channel: str) -> dict[str, Any]:
         data = await self._request(
@@ -123,7 +166,7 @@ class OoptraClient:
             "/voice/members",
             params={"area": area, "channel": channel},
         )
-        return data if isinstance(data, dict) else {"raw": data}
+        return _expect_mapping(data, "/voice/members")
 
     async def channels(self, area: str) -> dict[str, Any]:
         """查询域内语音频道与在线人数。"""
@@ -132,7 +175,7 @@ class OoptraClient:
             "/voice/channels",
             params={"area": area},
         )
-        return data if isinstance(data, dict) else {"raw": data}
+        return _expect_mapping(data, "/voice/channels")
 
     async def join(self, area: str, channel: str) -> dict[str, Any]:
         data = await self._request(
@@ -140,11 +183,12 @@ class OoptraClient:
             "/voice/join",
             json_body={"area": area, "channel": channel},
         )
-        return data if isinstance(data, dict) else {"ok": True, "raw": data}
+        # 旧版对非 dict 响应返回 {"ok": True, "raw": data}——**伪造进房成功**
+        return _expect_mapping(data, "/voice/join")
 
     async def leave(self) -> dict[str, Any]:
         data = await self._request("POST", "/voice/leave", json_body={})
-        return data if isinstance(data, dict) else {"ok": True, "raw": data}
+        return _expect_mapping(data, "/voice/leave")
 
 
 def _clip(text: str, limit: int = _ERROR_BODY_MAX) -> str:
@@ -157,6 +201,24 @@ def _safe_text(resp: Any) -> str:
         return _clip(str(resp.text))
     except Exception:
         return ""
+
+
+def _expect_mapping(data: Any, what: str) -> dict[str, Any]:
+    """契约要求顶层是 JSON 对象；不是就报错。
+
+    以前这里把非 dict 包成 {"raw": data} 假装成功，而没有任何 formatter 读 raw，
+    结果契约不符被显示成「当前没有人在语音频道」——把故障伪装成空数据。
+    """
+    if isinstance(data, dict):
+        return data
+    raise OoptraError(
+        f"Ooptra 的 {what} 不符合契约：期望 JSON 对象，实际是 {type(data).__name__}"
+    )
+
+
+def _contract_warn(what: str) -> str:
+    """格式化时遇到契约不符的统一提示（比「没人在语音」这种误报有用）。"""
+    return f"{what}：Ooptra 返回结构不符合契约（需 Ooptra ≥ 2.0.0），可用 /语音自检 定位"
 
 
 def looks_like_label(text: str) -> bool:
@@ -289,9 +351,12 @@ def _is_muted_flag(value: Any) -> bool | None:
 
 def format_members(payload: dict[str, Any], *, label: str = "") -> str:
     """把 /voice/members 响应排成群消息文本。"""
+    if not isinstance(payload, dict):
+        return _contract_warn("语音成员")
     members = payload.get("members")
     if not isinstance(members, list):
-        members = []
+        # 注意区分「列表为空」（真的没人）与「没有 members 字段」（契约不符）
+        return _contract_warn("语音成员")
 
     listed = len(members)
     raw_count = payload.get("count")
@@ -336,6 +401,8 @@ def format_members(payload: dict[str, Any], *, label: str = "") -> str:
 
 
 def format_status(payload: dict[str, Any]) -> str:
+    if not isinstance(payload, dict) or "joined" not in payload:
+        return _contract_warn("语音状态")
     joined = bool(payload.get("joined"))
     if not joined:
         return "语音：未进房"
@@ -347,6 +414,8 @@ def format_status(payload: dict[str, Any]) -> str:
 
 def channel_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
     """把 /voice/channels 响应归一成 [{id, name, count}]。"""
+    if not isinstance(payload, dict):
+        return []
     rows = payload.get("channels")
     if not isinstance(rows, list):
         return []
@@ -371,6 +440,8 @@ def channel_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
 def format_channel_counts(payload: dict[str, Any], *, label: str = "") -> str:
     """把 /voice/channels 排成「有人的频道 + 人数」群消息文本。"""
     rows = channel_rows(payload)
+    if not rows and not isinstance(payload.get("channels"), list):
+        return _contract_warn("语音频道列表")
     occupied = [r for r in rows if r["count"] > 0]
     title = label or "有人的语音频道"
     lines = [f"【{title}】"]

@@ -3,7 +3,7 @@
     "description": "Ooptra VOICE_API 地址",
     "type": "string",
     "default": "http://127.0.0.1:3090",
-    "hint": "与 Ooptra WebUI 同源时填其地址；末尾不要斜杠",
+    "hint": "推荐用 3090：它就是 Ooptra WebUI 端口，已含全部 VOICE_API（Ooptra 2.0.0 起独立的 3091 与 3090 路由已统一）。末尾不要斜杠",
     "obvious_hint": true
   },
   "api_token": {
@@ -11,7 +11,7 @@
     "type": "string",
     "default": "",
     "secret": true,
-    "hint": "与 Ooptra 的 WEBUI_CONFIG.token 一致（VOICE_API 默认挂在 WebUI 同端口）；若开了独立 VOICE_API_CONFIG 则填那边的 token。两边都留空则不校验"
+    "hint": "与 Ooptra 的 WEBUI_CONFIG.token 一致（用 3090 时）；若开了独立 VOICE_API_CONFIG（3091）则填那边的 token。两边都留空则不校验"
   },
   "timeout_sec": {
     "description": "HTTP 超时（秒）",

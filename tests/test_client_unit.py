@@ -118,6 +118,35 @@ class TestIdHeuristics(unittest.TestCase):
         self.assertFalse(looks_like_id(""))
         self.assertFalse(looks_like_id("bad id with space"))
 
+    def test_id_rejects_trailing_newline(self):
+        # 正则用 \Z 而非 $：$ 允许结尾换行，"chan-1\n" 曾被判成合法 ID
+        self.assertFalse(looks_like_id("chan-1\n"))
+        self.assertFalse(looks_like_id("chan-1\n\n"))
+
+
+class TestContractWarnings(unittest.TestCase):
+    """契约不符要说「不符合契约」，不能伪装成「没人在语音」。"""
+
+    def test_members_missing_field_is_flagged(self):
+        text = format_members({"ok": True})
+        self.assertIn("不符合契约", text)
+
+    def test_members_empty_list_is_not_flagged(self):
+        text = format_members({"ok": True, "count": 0, "members": []})
+        self.assertIn("当前无人", text)
+        self.assertNotIn("不符合契约", text)
+
+    def test_channels_missing_field_is_flagged(self):
+        self.assertIn("不符合契约", format_channel_counts({"ok": True}))
+
+    def test_channels_empty_list_is_not_flagged(self):
+        text = format_channel_counts({"ok": True, "channels": []})
+        self.assertIn("没有人", text)
+        self.assertNotIn("不符合契约", text)
+
+    def test_status_missing_joined_is_flagged(self):
+        self.assertIn("不符合契约", format_status({"ok": True}))
+
 
 class TestFormat(unittest.TestCase):
     def test_members(self):
