@@ -3,7 +3,7 @@
     "description": "Ooptra VOICE_API 地址",
     "type": "string",
     "default": "http://127.0.0.1:3090",
-    "hint": "推荐用 3090：它就是 Ooptra WebUI 端口，已含全部 VOICE_API（Ooptra 2.0.0 起独立的 3091 与 3090 路由已统一）。末尾不要斜杠",
+    "hint": "推荐用 3090（Ooptra WebUI），已含全部 VOICE_API 和语音方案切换接口 /api/config。独立 VOICE_API 端口只支持查询/进退房，不支持切换方案。末尾不要斜杠",
     "obvious_hint": true
   },
   "api_token": {
@@ -33,6 +33,12 @@
     "description": "进/退语音仅管理员可用",
     "type": "bool",
     "default": false
+  },
+  "backend_admin_only": {
+    "description": "语音方案切换仅管理员可用",
+    "type": "bool",
+    "default": true,
+    "hint": "命令和 LLM 工具共用此限制；查询方案不受限制。切换会修改 Ooptra 全局配置，影响连接同一实例的所有群。"
   },
   "allow_arbitrary_channel": {
     "description": "允许进入非绑定频道",

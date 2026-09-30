@@ -2,6 +2,16 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号尽量符合 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.0.0] - 2026-10-01
+
+### Added
+
+- `/语音方案` 查询当前方案；`/语音方案 gemini` / `/语音方案 mimo` 在 Gemini Live 与 MiMo 级联之间切换，支持双词名称与命令别名
+- `backend_admin_only` 默认 `true`，旧配置缺少该项时也默认仅管理员；查询对全员开放
+- LLM 工具 `set_oopz_voice_backend`，与命令共用权限、并发锁和冷却，受 `enable_llm_tools` 控制
+- 复用 Ooptra WebUI 的 `/api/config` 保存全局后端选择，只修改 `voice.backend`；缺少接口、未确认保存、需要重启或会话重建失败时明确提示
+- 补齐方案切换 HTTP、权限、并发与 mock 联调测试；mock 支持方案切换与状态查询
+
 ## [0.4.0] - 2026-09-29
 
 配套 **Ooptra ≥ 2.0.0**。本版修掉的都是「看起来正常、实际在骗你」的问题。
@@ -101,6 +111,7 @@
 - QQ 指令：语音状态/进退语音/绑定解绑/自检/帮助
 - LLM 工具与 VOICE_API 客户端、mock、基础单测
 
+[1.0.0]: https://github.com/Eason4869/astrbot_plugin_ooptra/compare/v0.4.0...v1.0.0
 [0.4.0]: https://github.com/Eason4869/astrbot_plugin_ooptra/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Eason4869/astrbot_plugin_ooptra/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/Eason4869/astrbot_plugin_ooptra/compare/v0.2.0...v0.2.1
