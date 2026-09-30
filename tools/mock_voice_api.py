@@ -3,7 +3,7 @@
 用法（标准库，无需额外依赖）：
   python mock_voice_api.py [port]
 
-默认 3090。响应体对齐 Ooptra ≥ 2.0.0 契约（含 GET /voice/channels）。
+默认 3090。响应体对齐 Ooptra ≥ 2.0.0 契约（含 GET /voice/channels）与方案切换接口。
 本 mock 不校验 token。
 
 数据**有意做成两个域 + 多个频道**：单域单频道是发现不了「群只绑了域没绑频道」
@@ -48,6 +48,8 @@ AREAS: dict[str, dict[str, Any]] = {
 }
 
 JOINED: dict[str, Any] = {
+    "backend": "gemini_live",
+    "enabled": True,
     "joined": True,
     "area": DEFAULT_AREA,
     "channel": "demo-channel",
@@ -171,6 +173,25 @@ class Handler(BaseHTTPRequestHandler):
             body = json.loads(raw.decode("utf-8") or "{}")
         except json.JSONDecodeError:
             body = {}
+
+        if path == "/api/config":
+            updates = body.get("updates") if isinstance(body, dict) else None
+            voice = updates.get("voice") if isinstance(updates, dict) else None
+            backend = voice.get("backend") if isinstance(voice, dict) else None
+            if backend not in ("gemini_live", "mimo_cascade"):
+                self._json(400, {"ok": False, "error": "backend must be gemini_live or mimo_cascade"})
+                return
+            with _LOCK:
+                changed = JOINED.get("backend") != backend
+                JOINED["backend"] = backend
+            self._json(200, {
+                "ok": True,
+                "changed": {"voice": ["backend"]},
+                "hot_reloaded_fields": ["backend"] if changed else [],
+                "restart_required": False,
+                "notes": ["语音后端已切换"] if changed else [],
+            })
+            return
 
         if path == "/voice/join":
             area = str(body.get("area") or "")

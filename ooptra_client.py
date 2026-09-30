@@ -6,6 +6,7 @@ API 契约（Ooptra ≥ 2.0.0 的 VOICE_API）：
   GET  /voice/channels?area=          # 域内语音频道 + 在线人数
   POST /voice/join   {"area": "...", "channel": "..."}
   POST /voice/leave  {}
+  POST /api/config  {"updates": {"voice": {"backend": "..."}}}  # 仅 WebUI 端口
   GET  /health
 鉴权：Authorization: Bearer <token>（token 为空则不发送）。
 token 与 Ooptra 侧保持一致：VOICE_API 默认挂在 WebUI 同端口，填 WEBUI_CONFIG.token；
@@ -30,6 +31,18 @@ _ID_SAFE_RE = re.compile(r"^[\w.:-]{1,128}\Z")
 
 # 只有这些状态码才值得从 /health 回退到 /voice/status（=服务不认识 /health）
 _HEALTH_FALLBACK_STATUS = frozenset({404, 405, 501})
+
+BACKEND_LABELS = {"gemini_live": "Gemini Live", "mimo_cascade": "MiMo 级联"}
+
+
+def normalize_backend(name: str) -> str:
+    """把用户输入收敛到支持的两种后端；未知方案不发给配置接口。"""
+    compact = re.sub(r"[\s_-]+", "", name.lower())
+    if compact in {"gemini", "geminilive"}:
+        return "gemini_live"
+    if compact in {"mimo", "mimocascade", "mimo级联"}:
+        return "mimo_cascade"
+    raise ValueError("用法：/语音方案 gemini 或 /语音方案 mimo；不带参数查询当前方案。")
 
 
 class OoptraError(Exception):
@@ -189,6 +202,35 @@ class OoptraClient:
     async def leave(self) -> dict[str, Any]:
         data = await self._request("POST", "/voice/leave", json_body={})
         return _expect_mapping(data, "/voice/leave")
+
+    async def set_backend(self, backend: str) -> dict[str, Any]:
+        """复用 Ooptra WebUI 的持久化/热重载接口，只修改语音后端。"""
+        backend = normalize_backend(backend)
+        try:
+            data = await self._request(
+                "POST", "/api/config",
+                json_body={"updates": {"voice": {"backend": backend}}},
+            )
+        except OoptraError as exc:
+            if exc.status_code != 404:
+                raise
+            raise OoptraError(
+                "切换语音方案需要 Ooptra WebUI 的 /api/config 接口。"
+                "请将 api_base 指向 WebUI（默认 http://127.0.0.1:3090），"
+                "api_token 使用 WEBUI_CONFIG.token；独立 VOICE_API 端口不提供配置接口。"
+                "若已使用 WebUI，请升级 Ooptra 并检查反向代理路径。",
+                status_code=404,
+            ) from exc
+        result = _expect_mapping(data, "/api/config")
+        changed = result.get("changed")
+        voice_fields = changed.get("voice") if isinstance(changed, dict) else None
+        if (
+            result.get("ok") is not True
+            or not isinstance(voice_fields, list)
+            or "backend" not in voice_fields
+        ):
+            raise OoptraError("Ooptra 的 /api/config 未确认保存语音后端，不能确认方案切换。")
+        return result
 
 
 def _clip(text: str, limit: int = _ERROR_BODY_MAX) -> str:

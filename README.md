@@ -19,6 +19,8 @@
 | `/语音状态` `/语音人数` | 查看绑定域内各语音频道在线人数（无需默认频道） | 全员 |
 | `/进语音 [频道名\|频道ID]` | 进默认频道；也可按频道名/ID 指定其他频道 | 可配置 |
 | `/退语音` | Bot 退出语音 | 可配置 |
+| `/语音方案` | 查询当前语音方案（无需群绑定） | 全员 |
+| `/语音方案 gemini` / `/语音方案 mimo` | 切换 Gemini Live / MiMo 级联 | 默认仅管理员 |
 | `/语音绑定 <域ID> [频道ID] [备注]` | 将当前 QQ 群绑定到 Oopz 域/频道 | 管理员 |
 | `/语音解绑` | 解除当前群绑定 | 管理员 |
 | `/语音自检` | 检测连通性并逐条探测契约端点 | 全员 |
@@ -33,8 +35,25 @@
 
 - `query_oopz_voice_members` / `query_oopz_voice_status`
 - `join_oopz_voice` / `leave_oopz_voice`
+- `set_oopz_voice_backend`：查询/切换语音方案（参数为空时仅查询，切换默认仅管理员）
 
-关闭后工具会返回「已禁用」。`join` 同样受绑定频道与权限约束。
+关闭后工具会返回「已禁用」。`join` 同样受绑定频道与权限约束；方案切换工具与命令共用权限、锁与冷却。
+
+### 切换语音方案
+
+```text
+/语音方案                 # 查询当前方案，全员可用
+/语音方案 gemini          # 管理员切换至 Gemini Live
+/语音方案 mimo            # 管理员切换至 MiMo 级联
+```
+
+也支持 `Gemini Live`、`MiMo 级联`、`gemini_live`、`mimo_cascade`；命令别名为 `/voice_backend`、`/切换语音方案`、`/语音切换`。启用 LLM 工具后，管理员也可通过自然语言要求切换。
+
+切换复用 Ooptra WebUI 的 `POST /api/config`，只写入 `voice.backend`，由 Ooptra 持久化并热重载。请提前在 Ooptra 中配置相应方案的密钥与模型；切换沿用既有配置，不会自动开启语音对话。支持热重载时，已在房的 Bot 由 Ooptra 重建语音后端/会话；旧服务提示需要重启时，插件会显示提示，不会误报已生效。
+
+**该选择是 Ooptra 实例的全局设置**，会影响连接同一实例的所有 QQ 群，无需先绑定群。`backend_admin_only` 默认 `true`（管理员判断与现有进退房工具一致，使用 AstrBot 的 `event.is_admin()`）；命令和 LLM 工具都受此限制，且与进/退房共用约 3 秒冷却和并发锁。
+
+**切换必须使用 WebUI 地址**：`api_base` 默认 `http://127.0.0.1:3090`，`api_token` 填 `WEBUI_CONFIG.token`。独立 VOICE_API 端口提供查询/进退房接口，但不提供 `/api/config`；本功能只需更新插件，无需修改 Ooptra 代码。若服务器缺少该接口、鉴权失败、配置未确认保存或会话重建失败，插件会明确提示。
 
 ---
 
@@ -72,11 +91,12 @@ Ooptra  ◄── Oopz 文字消息
 | GET | `/voice/members?area=&channel=` | 频道在线人数与成员（`channel` 留空表示整域汇总） |
 | POST | `/voice/join` | Body: `{"area","channel"}` |
 | POST | `/voice/leave` | 退出语音 |
+| POST | `/api/config` | Body: `{"updates":{"voice":{"backend":"gemini_live"}}}`（或 `mimo_cascade`）；仅 WebUI 提供，保存并应用后端选择 |
 | — | `Authorization: Bearer <token>` | 与 Ooptra 侧令牌一致；两边都留空则不校验 |
 
 成员字段兼容 `mic`/`speaker` 或 `m`/`hm`（0=闭，1=开）；Oopz 不返回静音状态时字段为 `null`（未知，不会伪造成「开麦」）。
 
-**端口选哪个**：用 **`3090`**（Ooptra WebUI 端口，已含全部 VOICE_API）。Ooptra 2.0.0 起，可选的独立端口 `3091`（`VOICE_API_CONFIG`）与 `3090` **路由完全统一**，用哪个都行，但没必要多开一个。
+**端口选哪个**：推荐 **`3090`**（Ooptra WebUI 端口，已含全部 VOICE_API 和方案切换需要的 `/api/config`）。Ooptra 2.0.0 起，可选的独立端口 `3091`（`VOICE_API_CONFIG`）与 `3090` 的 **VOICE_API 路由一致**，查询/进退房可使用任一端口；切换方案需用 WebUI 端口。
 
 **令牌对齐**：走 `3090` 时鉴权用 **`WEBUI_CONFIG.token`**；只有单独开了 `VOICE_API_CONFIG`（`3091`）时才用 **`VOICE_API_CONFIG.token`**。本插件的 `api_token` 填其中生效的那个，两边都留空则不校验。
 
@@ -122,6 +142,7 @@ Ooptra  ◄── Oopz 文字消息
 | `group_map` | `{}` | QQ 群号 → `{area, channel, label}` |
 | `allow_join` | `true` | 是否允许进/退语音 |
 | `join_admin_only` | `false` | 进/退语音是否仅管理员 |
+| `backend_admin_only` | `true` | 语音方案切换是否仅管理员；查询仍对全员开放，命令和 LLM 工具共用限制 |
 | `allow_arbitrary_channel` | `false` | 是否允许进非绑定频道（管理员始终可临时指定） |
 | `enable_llm_tools` | `true` | LLM 工具总开关（关闭后工具直接拒绝） |
 
@@ -160,7 +181,8 @@ Ooptra  ◄── Oopz 文字消息
 - 进房默认**只允许本群绑定的频道**，减少误入/滥用
 - **跨域保护**：Ooptra 的默认频道不会把 Bot 带进本群绑定域之外的房间
 - 请求固定 `trust_env=False`，令牌不会因为系统代理而外泄给第三方
-- 进/退语音有约 3 秒冷却，降低刷指令
+- 进/退语音与方案切换共用并发锁和约 3 秒冷却，降低刷指令
+- 方案切换默认仅管理员，影响 Ooptra 全局后端选择
 - `api_token` 在 WebUI 中掩码显示
 - 绑定 / 解绑需管理员
 
@@ -174,11 +196,12 @@ astrbot_plugin_ooptra/
 ├── ooptra_client.py           # VOICE_API 客户端与格式化
 ├── _conf_schema.json
 ├── metadata.yaml
-├── tools/mock_voice_api.py    # 本地 mock（两域多频道，含 /voice/channels）
+├── tools/mock_voice_api.py    # 本地 mock（两域多频道、方案切换）
 └── tests/
     ├── test_client_unit.py    # 纯函数
     ├── test_client_http.py    # HTTP 分支（httpx.MockTransport）
-    └── test_main_logic.py     # 指令层（跨域保护/锁/文案/自检）
+    ├── test_main_logic.py     # 指令层（跨域保护/锁/文案/自检）
+    └── test_voice_backend.py  # 方案切换（权限/HTTP/并发/mock 联调）
 ```
 
 ```bash

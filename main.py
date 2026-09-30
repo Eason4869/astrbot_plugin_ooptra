@@ -6,6 +6,7 @@
   GET  /voice/members?area=&channel=
   POST /voice/join   {"area","channel"}
   POST /voice/leave
+  POST /api/config  {"updates": {"voice": {"backend": "..."}}}  # WebUI 端口
   GET  /health
 """
 
@@ -20,6 +21,7 @@ from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star
 
 from .ooptra_client import (
+    BACKEND_LABELS,
     OoptraClient,
     OoptraError,
     channel_rows,
@@ -28,11 +30,12 @@ from .ooptra_client import (
     format_status,
     looks_like_id,
     looks_like_label,
+    normalize_backend,
     resolve_channel,
     resolve_group_mapping,
 )
 
-# 进/退语音最短间隔（秒），防止刷指令
+# 进/退语音与方案切换最短间隔（秒），防止刷指令
 JOIN_COOLDOWN_SEC = 3.0
 
 
@@ -430,6 +433,70 @@ class OoptraPlugin(Star):
             return
         yield event.plain_result("已退出语音。")
 
+    # ---------- 指令：语音方案 ----------
+
+    async def _voice_backend(self, event: AstrMessageEvent, backend: str = "") -> str:
+        requested = backend.strip()
+        if not requested:
+            try:
+                status = await self.client.status()
+            except OoptraError as exc:
+                return self._err(exc)
+            current = status.get("backend")
+            if not isinstance(current, str) or not current.strip():
+                return "当前 Ooptra 未返回语音方案，请升级 Ooptra 后再查询。"
+            label = BACKEND_LABELS.get(current, current[:80])
+            text = f"当前语音方案：{label}（全局）"
+            if status.get("enabled") is False:
+                text += "\n语音对话未启用；切换方案不会自动开启语音对话。"
+            return text
+
+        if self.config.get("backend_admin_only", True) and not self._is_admin(event):
+            return "语音方案切换仅管理员可用。"
+        try:
+            target = normalize_backend(requested)
+        except ValueError as exc:
+            return str(exc)
+
+        # 与进/退房共用锁；在锁内检查冷却，避免排队的指令/工具连续重建后端。
+        async with self._voice_op_lock:
+            cooldown = self._check_voice_cooldown()
+            if cooldown:
+                return cooldown
+            try:
+                result = await self.client.set_backend(target)
+            except OoptraError as exc:
+                return self._err(exc)
+            self._mark_voice_op()
+
+        label = BACKEND_LABELS[target]
+        raw_notes = result.get("notes")
+        notes = [str(n) for n in raw_notes] if isinstance(raw_notes, list) else []
+        failures = [note for note in notes if "失败" in note or "错误" in note]
+        # 先检查完整反馈，失败提示优先展示，避免截断后误报成功。
+        notes = [note[:160] for note in (failures or notes)[:8]]
+        reloaded = result.get("hot_reloaded_fields")
+        hot_applied = isinstance(reloaded, list) and "backend" in reloaded
+        if hot_applied and not failures and not result.get("restart_required"):
+            lines = [f"语音方案已切换为：{label}（全局），配置已保存。"]
+        else:
+            lines = [f"语音方案配置已保存为：{label}（全局）。"]
+            if failures:
+                lines.append("运行时应用出现异常，请检查 Ooptra 配置与日志。")
+            elif result.get("restart_required"):
+                lines.append("Ooptra 提示需重启后生效。")
+            else:
+                lines.append("后端可能已使用该方案；接口未报告热切换，请用 /语音方案 查询当前方案。")
+        lines.extend(notes)
+        lines.append("此设置影响连接同一 Ooptra 实例的所有群；切换不会自动开启语音对话。")
+        return "\n".join(lines)
+
+    @filter.command("语音方案", alias={"voice_backend", "切换语音方案", "语音切换"})
+    async def voice_backend(self, event: AstrMessageEvent, backend: str = "", variant: str = ""):
+        """查询或切换全局语音方案：/语音方案 [gemini|mimo]，切换默认仅管理员。"""
+        text = await self._voice_backend(event, f"{backend} {variant}")
+        yield event.plain_result(text)
+
     # ---------- 指令：连通性 / 帮助 ----------
 
     @filter.command("语音自检", alias={"ooptra_ping", "语音连接"})
@@ -495,6 +562,7 @@ class OoptraPlugin(Star):
             "· /语音状态 — 查各频道在线人数（别名：语音人数）",
             "· /进语音 [频道名|频道ID] — 进默认频道，或指定频道",
             "· /退语音 — Bot 退语音",
+            "· /语音方案 [gemini|mimo] — 查询/切换全局语音方案",
             "· /语音绑定 <域ID> [频道ID] [备注] —（管理）绑群",
             "· /语音解绑 —（管理）解绑",
             "· /语音自检 — 测 Ooptra 连接并逐条探测契约端点",
@@ -503,12 +571,25 @@ class OoptraPlugin(Star):
             lines.append("进/退语音：仅管理员")
         if not self.config.get("allow_join", True):
             lines.append("进/退语音：已禁用")
+        if self.config.get("backend_admin_only", True):
+            lines.append("方案切换：仅管理员")
         if not self._llm_tools_enabled():
             lines.append("LLM 工具：已禁用")
         lines.append("提示：先在 Ooptra 开启 VOICE_API，并完成 QQ 群绑定。")
         yield event.plain_result("\n".join(lines))
 
     # ---------- LLM 工具 ----------
+
+    @filter.llm_tool(name="set_oopz_voice_backend")
+    async def tool_backend(self, event: AstrMessageEvent, backend: str = "") -> str:
+        """查询或切换 Ooptra 全局语音方案，切换默认仅管理员可用。
+
+        Args:
+            backend(string): gemini 或 mimo，也支持 gemini_live / mimo_cascade；为空时仅查询
+        """
+        if not self._llm_tools_enabled():
+            return "LLM 语音工具已禁用。"
+        return await self._voice_backend(event, backend)
 
     @filter.llm_tool(name="query_oopz_voice_members")
     async def tool_members(self, event: AstrMessageEvent, area: str = "", channel: str = "") -> str:
