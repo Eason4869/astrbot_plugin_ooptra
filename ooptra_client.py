@@ -191,6 +191,25 @@ class OoptraClient:
         )
         return _expect_mapping(data, "/voice/channels")
 
+    async def areas(self) -> dict[str, Any]:
+        return _expect_mapping(await self._request("GET", "/oopz/areas"), "/oopz/areas")
+
+    async def stream_logs(self, file: str, lines: int):
+        """Forward SSE without buffering the stream or forwarding browser credentials."""
+        import httpx
+
+        try:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(self.timeout, read=None), trust_env=False,
+                                         transport=self._transport) as client:
+                async with client.stream("GET", f"{self.base_url}/api/logs/stream",
+                                         params={"file": file, "lines": lines}, headers=self._headers()) as response:
+                    if response.status_code != 200 or "text/event-stream" not in response.headers.get("content-type", ""):
+                        raise OoptraError("无法读取 Ooptra 日志流，请检查服务与访问令牌。")
+                    async for line in response.aiter_lines():
+                        yield line + "\n"
+        except httpx.HTTPError as exc:
+            raise OoptraError("Ooptra 日志流连接中断。") from exc
+
     async def join(self, area: str, channel: str) -> dict[str, Any]:
         data = await self._request(
             "POST",

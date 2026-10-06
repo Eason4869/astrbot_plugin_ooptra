@@ -1,0 +1,14 @@
+{
+  "views": {
+    "control": {
+      "title": "Ooptra 工作台",
+      "description": "常用语音操作、QQ 群绑定与完整 Ooptra 控制台"
+    }
+  },
+  "pages": {
+    "control": {
+      "title": "Ooptra 工作台",
+      "description": "常用语音操作、QQ 群绑定与完整 Ooptra 控制台"
+    }
+  }
+}

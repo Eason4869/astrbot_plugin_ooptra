@@ -35,6 +35,8 @@ from .ooptra_client import (
     resolve_channel,
     resolve_group_mapping,
 )
+from .web_routes import register_panel, unregister_panel
+from .webui import ControlPanel
 
 # 进/退语音、串门开关与方案切换最短间隔（秒），防止刷指令
 JOIN_COOLDOWN_SEC = 3.0
@@ -48,6 +50,11 @@ class OoptraPlugin(Star):
         self._map_lock = asyncio.Lock()
         self._voice_op_lock = asyncio.Lock()
         self._last_voice_op_at = 0.0
+        self._webui_active = True
+        self._webui_handlers = set()
+        self._webui_stream_tasks = set()
+        self.panel = ControlPanel(self)
+        register_panel(self)
 
     # ---------- 基础设施 ----------
 
@@ -176,10 +183,18 @@ class OoptraPlugin(Star):
 
     async def _mutate_group_map(self, mutate) -> dict[str, Any]:
         async with self._map_lock:
-            group_map = dict(self.config.get("group_map") or {})
+            previous = self.config.get("group_map")
+            group_map = dict(previous or {})
             mutate(group_map)
             self.config["group_map"] = group_map
-            self.config.save_config()
+            try:
+                self.config.save_config()
+            except Exception:
+                if previous is None:
+                    self.config.pop("group_map", None)
+                else:
+                    self.config["group_map"] = previous
+                raise
             return group_map
 
     # ---------- 指令：状态 / 成员 ----------
@@ -769,5 +784,12 @@ class OoptraPlugin(Star):
 
     async def terminate(self):
         """插件卸载/停用时调用。"""
+        self._webui_active = False
+        await unregister_panel(self)
+        # Drain in-flight writes; queued panel writes recheck the lifecycle flag.
+        async with self._voice_op_lock:
+            pass
+        async with self._map_lock:
+            pass
         self._client = self._build_client()
         self._last_voice_op_at = 0.0

@@ -1,0 +1,5 @@
+.console-link-dialog { width: min(560px, calc(100% - 32px)); background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 12px; padding: 24px; }
+.console-link-dialog input { width: 100%; margin: 16px 0 8px; }
+.console-link-dialog button { margin-top: 20px; }
+.console-link-dialog::backdrop { background: #0f182480; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }

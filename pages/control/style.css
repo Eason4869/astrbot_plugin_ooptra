@@ -1,0 +1,69 @@
+/* Reuse the bundled Ooptra 3.0.2 tokens and controls verbatim. */
+@import url("./console.css");
+.dependency-notice { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 20px; margin-bottom: 24px; border: 1px solid var(--warn-line); border-left: 4px solid var(--warn); border-radius: 8px; background: var(--warn-soft); color: var(--warn-text); }
+.dependency-notice strong { font-size: 15px; line-height: 1.6; }
+.dependency-notice p { margin-top: 4px; font-size: 12px; line-height: 1.65; }
+.dependency-notice .btn { flex-shrink: 0; }
+#project-dialog .field { margin-top: 20px; }
+#project-url { width: 100%; min-width: 0; }
+.rail-note { margin-top: auto; padding: 16px 12px 0; border-top: 1px solid var(--line); }
+.rail-note p { color: var(--muted); font-size: 12px; margin-top: 12px; line-height: 1.65; }
+a.nav-item:hover, a.btn:hover { text-decoration: none; }
+.voice-grid { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(280px, 1fr); gap: 16px; }
+.target-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.channel-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 8px; margin: 8px 0 12px; }
+.channel-option { display: flex; flex-direction: column; gap: 8px; text-align: left; padding: 14px; min-width: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); color: var(--text); font: inherit; cursor: pointer; }
+.channel-option:hover { border-color: var(--accent-line); }
+.channel-option[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); box-shadow: inset 3px 0 var(--accent); }
+.channel-option b { overflow-wrap: anywhere; }
+.channel-option span { font-size: 12px; color: var(--muted); }
+.action-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; align-items: center; }
+.scope-note { font-size: 12px; color: var(--muted); line-height: 1.6; margin-top: 16px; }
+.visit-note { margin-top: 8px; }
+.manual-target { margin-top: 16px; font-size: 12px; color: var(--muted); }
+.manual-target summary { cursor: pointer; }
+.members-card { margin-top: 16px; }
+.members-note { margin-top: 12px; }
+.table td { overflow-wrap: anywhere; }
+.table .empty { padding: 28px 12px; color: var(--muted); text-align: center; }
+.binding-search { width: min(440px, 100%); margin: 8px 0 16px; }
+.binding-table td:nth-child(2), .binding-table td:nth-child(3) { max-width: 280px; }
+.binding-table td:last-child { min-width: 132px; white-space: nowrap; }
+.binding-table .row-label { display: block; color: var(--muted); font-size: 12px; margin-top: 4px; }
+.binding-table .btn + .btn { margin-left: 5px; }
+.feedback { border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; background: var(--ok-soft); color: var(--ok-text); white-space: pre-line; }
+.feedback[data-tone="err"] { background: var(--err-soft); color: var(--err); }
+.feedback[data-tone="warn"] { background: var(--warn-soft); color: var(--warn-text); }
+.chip.err { background: var(--err-soft); }
+.btn.danger { background: var(--err-soft); border-color: var(--err); color: var(--err); }
+dialog { padding: 24px; width: min(540px, calc(100% - 32px)); max-height: calc(100% - 32px); color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+dialog::backdrop { background: #0f182480; }
+.dialog-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 22px; }
+.dialog-head h2 { font-size: 20px; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; }
+.field textarea { width: 100%; resize: vertical; }
+.area-helper { margin-top: -4px; margin-bottom: 20px; }
+.form-error { color: var(--err); font-size: 13px; }
+#confirm-text { margin-top: 12px; overflow-wrap: anywhere; }
+.control:focus-visible, .btn:focus-visible, .channel-option:focus-visible, .nav-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+@media (max-width: 1050px) { .voice-grid { grid-template-columns: 1fr; } .workspace { padding: 24px; } }
+@media (max-width: 760px) {
+  .dependency-notice { flex-direction: column; align-items: flex-start; padding: 14px 16px; gap: 10px; }
+  .screen-app { display: block; }
+  .rail { height: auto; position: static; padding: 16px; gap: 16px; border-right: 0; border-bottom: 1px solid var(--line); }
+  .rail-nav { flex-direction: row; flex-wrap: wrap; gap: 8px; }
+  .rail-nav .nav-group { display: flex; flex-direction: row; gap: 6px; }
+  .nav-group-label, .rail-note { display: none; }
+  .nav-item { width: auto; padding: 9px 12px; }
+  .workspace { padding: 20px 16px 32px; }
+  .page-head { align-items: flex-start; }
+  .page-actions { width: 100%; margin-left: 0; justify-content: flex-start; }
+  .target-fields { grid-template-columns: 1fr; gap: 0; }
+  .tiles { grid-template-columns: 1fr; }
+  .tile + .tile { border-left: 0; border-top: 1px solid var(--line); }
+  .binding-table { min-width: 610px; }
+  .card { padding: 16px; }
+  .verdict { flex-wrap: wrap; }
+  dialog { padding: 20px; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }

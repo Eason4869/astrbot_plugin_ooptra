@@ -2,6 +2,26 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号尽量符合 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.2.0] - 2026-10-07
+
+### Added
+
+- AstrBot 原生插件页面「Ooptra 工作台」，沿用 Ooptra 3.0.2 的冷白 / 钴蓝样式与明暗主题
+- 简易工作台顶部醒目显示「本插件需安装Ooptra方能完美运行」，附 Ooptra GitHub 地址与复制入口
+- 弃用紫色耳机插件 LOGO，插件列表与工作台统一使用 Ooptra 蓝绿双对话环标识
+- 状态、频道人数、成员静音状态、进退语音、Gemini / MiMo 切换和分域串门按钮
+- 可视化添加、编辑、移除 QQ 群绑定，兼容旧简写、整数群号与一群多域；保存保留其他群和扩展字段
+- 在 AstrBot 内打开完整 Ooptra 控制台；对现有前端进行桥接、存储、SSE 和日志下载适配，无需额外暴露 Ooptra 端口给浏览器
+- 页面接口验证 AstrBot 登录身份，令牌仅由后端附加，固定允许的 Ooptra 路由；页面操作与 QQ 命令共享语音锁和冷却
+- 配套 Python / JavaScript 回归测试，以及真实 AstrBot API 和桥接 SDK 下的沙箱浏览器验证工具
+
+### Fixed
+
+- 群绑定保存配置失败时回滚内存值，避免页面或命令错误地使用尚未落盘的绑定
+- 插件停用 / 卸载时注销自身页面接口并关闭日志订阅，旧页面和排队中的操作不能继续写入
+- 完整控制台支持保存配置后立即重新连接；语音冷却只约束语音操作，不阻塞账号、人格等配置
+- 状态刷新保留用户待切换的语音方案，避免冷却期间选项被自动重置
+
 ## [1.1.0] - 2026-10-06
 
 ### Added
@@ -123,7 +143,8 @@
 - QQ 指令：语音状态/进退语音/绑定解绑/自检/帮助
 - LLM 工具与 VOICE_API 客户端、mock、基础单测
 
-[1.1.0]: https://github.com/Eason4869/astrbot_plugin_ooptra/compare/v1.0.0...main
+[1.2.0]: https://github.com/Eason4869/astrbot_plugin_ooptra/compare/v1.1.0...main
+[1.1.0]: https://github.com/Eason4869/astrbot_plugin_ooptra/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/Eason4869/astrbot_plugin_ooptra/compare/v0.4.0...v1.0.0
 [0.4.0]: https://github.com/Eason4869/astrbot_plugin_ooptra/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Eason4869/astrbot_plugin_ooptra/compare/v0.2.1...v0.3.0

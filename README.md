@@ -1,6 +1,6 @@
 # astrbot_plugin_ooptra
 
-> **Ooptra 配套插件。** 本插件用于 [AstrBot](https://github.com/AstrBotDevs/AstrBot)，通过 HTTP 调用 [Ooptra](https://github.com/Eason4869/Ooptra) 的 `VOICE_API`，让你在 **QQ** 里查询 / 管理 **Oopz 语音频道**。
+> **Ooptra 配套插件。** 本插件用于 [AstrBot](https://github.com/AstrBotDevs/AstrBot)，通过 HTTP 调用 [Ooptra](https://github.com/Eason4869/Ooptra) 的 API，在 **AstrBot 工作台和 QQ** 中查询 / 管理 **Oopz 语音频道**。
 >
 > **推荐与 [Ooptra](https://github.com/Eason4869/Ooptra) 配合使用**：Ooptra 负责 Oopz ↔ OneBot 文字桥接与语音进房，本插件负责 QQ 侧指令与群映射。单独使用本插件无法进语音（需要 Ooptra 提供 VOICE_API）。
 >
@@ -147,6 +147,49 @@ Ooptra  ◄── Oopz 文字消息
 
 ---
 
+## AstrBot 内的 Ooptra 工作台
+
+重载插件后，在 AstrBot WebUI 的插件详情中打开 **Ooptra 工作台**。需要支持
+Plugin Pages / Views 的 AstrBot 后端和 Dashboard；旧版若没有页面入口，请一起
+升级后端与 Dashboard。原有 QQ 命令与 LLM 工具仍可使用。
+
+- **语音台**：当前房间和方案、域内频道人数、成员闭麦 / 闭听状态；进房、退房、
+  Gemini Live / MiMo 方案切换，以及当前域的自动串门开关。
+- **群绑定**：填写 QQ 群号、域 ID、可选频道 ID 和备注；可添加、编辑、移除。
+  一个群的多个域可以逐行填写，保存时完整保留。编辑不会删除其他群或已有扩展字段。
+- **完整控制台**：点击「打开完整控制台」，直接在 AstrBot 内进入 Ooptra 原界面，
+  继续管理账号、模型配置、日志、人格、记忆和详细串门规则；点击「返回插件工作台」返回。
+
+两种界面沿用 Ooptra 3.0.2 的视觉样式，并跟随 AstrBot 明暗主题。完整控制台使用
+随插件打包的 Ooptra 3.0.2 前端和兼容层，数据及操作仍来自实际 Ooptra 服务。
+Ooptra 更新增加新界面功能时，需要同步更新插件的前端快照，详见
+[前端来源与同步方式](pages/control/CONSOLE_SOURCE.md)。
+
+插件列表与工作台统一使用 Ooptra 蓝绿双对话环 LOGO，原紫色耳机标识已弃用。
+
+简易工作台顶部显示「**本插件需安装Ooptra方能完美运行**」，附
+[Ooptra GitHub 仓库](https://github.com/Eason4869/Ooptra) 地址。
+在 AstrBot 沙箱内点击该链接会显示地址及复制按钮，便于打开安装说明。
+
+### 连接与权限
+
+页面通过 **浏览器 → AstrBot → 插件 → Ooptra** 调用接口，使用已有 `api_base`
+和 `api_token`，不会把 Ooptra 访问令牌下发到浏览器，也无需浏览器直接连接 Ooptra。
+请让 `api_base` 指向 **WebUI 端口（默认 3090）**，独立 VOICE_API 端口不能提供完整控制台。
+Docker 部署时，这个地址必须从 **AstrBot 容器内**可访问：两个容器可使用服务名，
+访问宿主机可使用部署环境支持的宿主机地址；容器内 `127.0.0.1` 指向该容器自身。
+
+页面仅供已登录 AstrBot 管理面板的用户使用，作为管理员操作入口。
+进退房仍遵守 `allow_join`，而 `join_admin_only` / `backend_admin_only` 是对 QQ 命令
+和 LLM 工具的限制。页面、QQ 命令和工具共用语音操作锁及约 3 秒冷却。
+全局方案切换影响连接同一实例的所有群；分域串门影响绑定同一个域的群。
+账号、人格等配置和保存后重新连接不会被语音冷却拦截。
+停用或卸载插件会注销页面接口并关闭日志订阅，旧页面需启用插件后重新打开。
+
+Ooptra 暂时离线时仍可管理本地群绑定。完整控制台在沙箱内使用页面内存保存临时
+选项，模型配置与群绑定则分别持久化到 Ooptra 和插件配置。日志跟随与下载通过
+AstrBot 桥接；完整控制台中的外部 GitHub 链接显示可复制地址。
+
 ## 配置项
 
 | 配置 | 默认 | 说明 |
@@ -207,8 +250,11 @@ Ooptra  ◄── Oopz 文字消息
 
 ```text
 astrbot_plugin_ooptra/
-├── main.py                    # 指令 + LLM 工具
-├── ooptra_client.py           # VOICE_API 客户端与格式化
+├── main.py                    # 指令 + LLM 工具 + 页面生命周期
+├── ooptra_client.py           # Ooptra 客户端与格式化
+├── webui.py                   # 页面服务、群绑定与控制台路由白名单
+├── web_routes.py              # AstrBot 原生 API / 旧版 Quart 适配
+├── pages/control/             # 简易工作台、完整控制台与兼容层
 ├── _conf_schema.json
 ├── metadata.yaml
 ├── tools/mock_voice_api.py    # 本地 mock（两域多频道、方案切换）
@@ -216,7 +262,10 @@ astrbot_plugin_ooptra/
     ├── test_client_unit.py    # 纯函数
     ├── test_client_http.py    # HTTP 分支（httpx.MockTransport）
     ├── test_main_logic.py     # 指令层（跨域保护/锁/文案/自检）
-    └── test_voice_backend.py  # 方案切换（权限/HTTP/并发/mock 联调）
+    ├── test_voice_backend.py  # 方案切换（权限/HTTP/并发/mock 联调）
+    ├── test_webui.py          # 群绑定、完整控制台、冷却与停用保护
+    ├── test_web_routes.py     # 可选 Quart 路由与 SSE 生命周期
+    └── test_console_adapter.cjs # Node 内置测试运行器验证兼容层
 ```
 
 ```bash
@@ -225,6 +274,23 @@ python tools/mock_voice_api.py 3099         # 换个端口，避免和真实 Oop
 ```
 
 改代码后可在 AstrBot WebUI 重载插件。
+
+页面兼容层测试无需 npm 依赖：`node --test tests/test_console_adapter.cjs`。
+Quart 路由测试需要开发依赖 `quart`；生产环境不需要额外安装 Quart。
+
+完整沙箱联调使用真实 AstrBot API 与官方桥接 SDK、模拟 Ooptra 数据，不会修改真实服务：
+
+```bash
+pip install fastapi hypercorn quart
+python tools/webui_preview.py /path/to/AstrBot --port 18765
+# 在另一个终端，使用已安装的 Playwright 包和系统 Microsoft Edge：
+node tools/webui_smoke.cjs http://127.0.0.1:18765 /path/to/node_modules/playwright
+```
+
+AstrBot 源码需包含 `astrbot/api/web.py`、`astrbot/core/utils/upload.py` 和
+`astrbot/dashboard/plugin_page_bridge.js`。测试使用原生页面的 iframe 沙箱限制，
+覆盖群绑定落盘、离线编辑、语音控制、保存并重连、日志、主题及手机布局；
+证据输出到已忽略的 `.webui-evidence/`。真实部署仍需以自己的 AstrBot / Ooptra 连接验证。
 
 ---
 
