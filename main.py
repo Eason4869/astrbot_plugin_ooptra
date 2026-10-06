@@ -1,11 +1,12 @@
 """Oopz 语音桥 — 在 QQ 查询/管理 Oopz 语音频道。
 
-依赖 Ooptra ≥ 2.0.0 的 VOICE_API 契约：
+依赖 Ooptra ≥ 3.0.0 的 VOICE_API 契约：
   GET  /voice/status
   GET  /voice/channels?area=        # 域内语音频道 + 在线人数
   GET  /voice/members?area=&channel=
   POST /voice/join   {"area","channel"}
   POST /voice/leave
+  POST /voice/auto-visit/config {"updates": {"areas": {"...": {"enabled": true}}}}
   POST /api/config  {"updates": {"voice": {"backend": "..."}}}  # WebUI 端口
   GET  /health
 """
@@ -35,7 +36,7 @@ from .ooptra_client import (
     resolve_group_mapping,
 )
 
-# 进/退语音与方案切换最短间隔（秒），防止刷指令
+# 进/退语音、串门开关与方案切换最短间隔（秒），防止刷指令
 JOIN_COOLDOWN_SEC = 3.0
 
 
@@ -497,6 +498,57 @@ class OoptraPlugin(Star):
         text = await self._voice_backend(event, f"{backend} {variant}")
         yield event.plain_result(text)
 
+    # ---------- 指令：自动串门 ----------
+
+    @filter.command("语音串门")
+    @filter.permission_type(filter.PermissionType.ADMIN)
+    async def voice_auto_visit(self, event: AstrMessageEvent, state: str = ""):
+        """开启/关闭本群绑定域的自动串门：/语音串门 开|关，仅管理员可用。"""
+        # 除框架权限过滤外再显式检查，内部调用也不能绕过管理员限制。
+        if not self._is_admin(event):
+            yield event.plain_result("语音串门仅管理员可用。")
+            return
+        requested = state.strip()
+        if requested not in {"开", "关"}:
+            yield event.plain_result("用法：/语音串门 开|关（仅管理员，控制本群绑定的 Oopz 域）。")
+            return
+        mapping = await self._require_mapping(event)
+        if mapping.get("_error"):
+            yield event.plain_result(str(mapping["_error"]))
+            return
+        area = str(mapping["area"])
+        enabled = requested == "开"
+        failure = ""
+        result: dict[str, Any] = {}
+        async with self._voice_op_lock:
+            cooldown = self._check_voice_cooldown()
+            if cooldown:
+                failure = cooldown
+            else:
+                try:
+                    result = await self.client.set_auto_visit(area, enabled)
+                except OoptraError as exc:
+                    failure = self._err(exc)
+                else:
+                    self._mark_voice_op()
+        # 先释放锁再回复，避免生成器挂起后阻塞其他语音操作。
+        if failure:
+            yield event.plain_result(failure)
+            return
+        action = "开启" if enabled else "关闭"
+        lines = [f"已{action}自动语音串门（域 {area}），配置已保存。"]
+        if enabled:
+            lines.append("按 Ooptra 的概率、冷却和每日上限运行；请先配置语音后端并开启语音总开关。")
+            status = result["status"]
+            if status.get("paused"):
+                reason = str(status.get("pause_reason") or "")[:160]
+                lines.append(f"串门控制器仍处于暂停状态{'：' + reason if reason else ''}，请在 Ooptra 语音台检查后恢复。")
+        notes = result.get("notes")
+        if isinstance(notes, list):
+            lines.extend(str(note)[:160] for note in notes[:8])
+        lines.append("同一 Ooptra 实例中绑定该域的群共用此开关。")
+        yield event.plain_result("\n".join(lines))
+
     # ---------- 指令：连通性 / 帮助 ----------
 
     @filter.command("语音自检", alias={"ooptra_ping", "语音连接"})
@@ -563,6 +615,7 @@ class OoptraPlugin(Star):
             "· /进语音 [频道名|频道ID] — 进默认频道，或指定频道",
             "· /退语音 — Bot 退语音",
             "· /语音方案 [gemini|mimo] — 查询/切换全局语音方案",
+            "· /语音串门 开|关 —（管理）开启/关闭本群绑定域的自动串门",
             "· /语音绑定 <域ID> [频道ID] [备注] —（管理）绑群",
             "· /语音解绑 —（管理）解绑",
             "· /语音自检 — 测 Ooptra 连接并逐条探测契约端点",

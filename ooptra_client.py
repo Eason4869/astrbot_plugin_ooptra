@@ -1,11 +1,12 @@
 """Ooptra VOICE_API 异步客户端。
 
-API 契约（Ooptra ≥ 2.0.0 的 VOICE_API）：
+API 契约（Ooptra ≥ 3.0.0 的 VOICE_API）：
   GET  /voice/status
   GET  /voice/members?area=&channel=
   GET  /voice/channels?area=          # 域内语音频道 + 在线人数
   POST /voice/join   {"area": "...", "channel": "..."}
   POST /voice/leave  {}
+  POST /voice/auto-visit/config {"updates": {"areas": {"...": {"enabled": true}}}}
   POST /api/config  {"updates": {"voice": {"backend": "..."}}}  # 仅 WebUI 端口
   GET  /health
 鉴权：Authorization: Bearer <token>（token 为空则不发送）。
@@ -202,6 +203,39 @@ class OoptraClient:
     async def leave(self) -> dict[str, Any]:
         data = await self._request("POST", "/voice/leave", json_body={})
         return _expect_mapping(data, "/voice/leave")
+
+    async def set_auto_visit(self, area: str, enabled: bool) -> dict[str, Any]:
+        """仅更新指定域的串门开关，保留全局规则、域覆盖与其他域配置。"""
+        if not isinstance(area, str) or not area.strip() or not isinstance(enabled, bool):
+            raise ValueError("串门开关需要非空域 ID 与布尔值。")
+        area = area.strip()
+        path = "/voice/auto-visit/config"
+        try:
+            data = await self._request(
+                "POST", path,
+                json_body={"updates": {"areas": {area: {"enabled": enabled}}}},
+            )
+        except OoptraError as exc:
+            if exc.status_code != 404:
+                raise
+            raise OoptraError(
+                f"语音串门需要 Ooptra ≥ 3.0.0 的 {path} 接口。"
+                "请升级 Ooptra，并检查 api_base 端口/路径及反向代理配置。",
+                status_code=404,
+            ) from exc
+        result = _expect_mapping(data, path)
+        changed = result.get("changed")
+        fields = changed.get("auto_visit") if isinstance(changed, dict) else None
+        if result.get("ok") is not True or not isinstance(fields, list) or "areas" not in fields:
+            raise OoptraError("Ooptra 未确认保存串门开关，不能确认操作成功。")
+        # 同时核对保存后的配置与控制器状态，避免仅落盘却未应用时误报成功。
+        for key in ("config", "status"):
+            section = result.get(key)
+            areas = section.get("areas") if isinstance(section, dict) else None
+            row = areas.get(area) if isinstance(areas, dict) else None
+            if not isinstance(row, dict) or row.get("enabled") is not enabled:
+                raise OoptraError("Ooptra 未确认目标域串门开关已保存并应用，请检查语音台与日志。")
+        return result
 
     async def set_backend(self, backend: str) -> dict[str, Any]:
         """复用 Ooptra WebUI 的持久化/热重载接口，只修改语音后端。"""

@@ -7,11 +7,12 @@ desc: |
   - `/语音状态` 查人数与成员（含闭麦/闭听）
   - `/进语音` `/退语音` 一键进退 Oopz 语音房
   - `/语音方案 gemini|mimo` 切换 Gemini Live / MiMo 级联，默认仅管理员
+  - `/语音串门 开|关` 开启/关闭绑定域自动串门，仅管理员
   - `/语音绑定` 管理 QQ 群 ↔ Oopz 域/频道映射
   - 可选 LLM 工具，模型可自行查/控语音
 
-  需配合 [Ooptra](https://github.com/Eason4869/Ooptra) **≥ 2.0.0** 的 VOICE_API 使用。
-version: 1.0.0
+  需配合 [Ooptra](https://github.com/Eason4869/Ooptra) **3.0 及以上版本（≥ 3.0.0）** 的 VOICE_API 使用。
+version: 1.1.0
 author: Eason4869
 repo: https://github.com/Eason4869/astrbot_plugin_ooptra
 homepage: https://github.com/Eason4869/astrbot_plugin_ooptra

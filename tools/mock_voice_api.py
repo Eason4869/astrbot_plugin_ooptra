@@ -3,7 +3,7 @@
 用法（标准库，无需额外依赖）：
   python mock_voice_api.py [port]
 
-默认 3090。响应体对齐 Ooptra ≥ 2.0.0 契约（含 GET /voice/channels）与方案切换接口。
+默认 3090。响应体对齐 Ooptra ≥ 3.0.0 契约，含方案切换与分域串门接口。
 本 mock 不校验 token。
 
 数据**有意做成两个域 + 多个频道**：单域单频道是发现不了「群只绑了域没绑频道」
@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import threading
+from copy import deepcopy
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import parse_qs, urlparse
@@ -21,6 +22,7 @@ from urllib.parse import parse_qs, urlparse
 _LOCK = threading.Lock()
 
 DEFAULT_AREA = "demo-area"
+AUTO_VISIT: dict[str, Any] = {"areas": {}}
 
 # area -> {"channels": [{id, name}], "members": {channel_id: [member, ...]}}
 AREAS: dict[str, dict[str, Any]] = {
@@ -97,7 +99,7 @@ class Handler(BaseHTTPRequestHandler):
                 {
                     "ok": True,
                     "service": "mock-ooptra-voice-api",
-                    "version": "2.0.0-mock",
+                    "version": "3.0.0-mock",
                     "enabled": True,
                 },
             )
@@ -190,6 +192,27 @@ class Handler(BaseHTTPRequestHandler):
                 "hot_reloaded_fields": ["backend"] if changed else [],
                 "restart_required": False,
                 "notes": ["语音后端已切换"] if changed else [],
+            })
+            return
+
+        if path == "/voice/auto-visit/config":
+            updates = body.get("updates") if isinstance(body, dict) else None
+            areas = updates.get("areas") if isinstance(updates, dict) else None
+            if not isinstance(areas, dict) or not areas or any(
+                area not in AREAS or not isinstance(row, dict)
+                or set(row) != {"enabled"} or not isinstance(row["enabled"], bool)
+                for area, row in areas.items()
+            ) or set(updates) != {"areas"}:
+                self._json(400, {"ok": False, "error": "expected areas with boolean enabled flags"})
+                return
+            with _LOCK:
+                for area, row in areas.items():
+                    AUTO_VISIT["areas"].setdefault(area, {}).update(row)
+                config = deepcopy(AUTO_VISIT)
+            self._json(200, {
+                "ok": True, "changed": {"auto_visit": ["areas"]},
+                "config": config, "status": {"areas": config["areas"], "paused": False},
+                "restart_required": False, "notes": [],
             })
             return
 

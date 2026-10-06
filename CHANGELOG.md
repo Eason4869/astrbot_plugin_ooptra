@@ -2,6 +2,18 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号尽量符合 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.1.0] - 2026-10-06
+
+### Added
+
+- `/语音串门 开|关` 开启/关闭当前 QQ 群绑定域的自动串门，固定仅 AstrBot 管理员可用；多域群沿用 Ooptra 默认域选择规则
+- 通过 `/voice/auto-visit/config` 稀疏更新域开关，保留其他串门配置，并核对保存后的配置和运行状态；与语音控制共用锁和冷却
+- 帮助、HTTP 契约、权限、分域选择、暂停提示、并发及错误反馈测试；mock 补充分域串门开关接口
+
+### Changed
+
+- 最低配套版本提高到 **Ooptra 3.0 及以上（≥ 3.0.0）**，README 与插件元信息同步标明
+
 ## [1.0.0] - 2026-10-01
 
 ### Added
@@ -111,6 +123,7 @@
 - QQ 指令：语音状态/进退语音/绑定解绑/自检/帮助
 - LLM 工具与 VOICE_API 客户端、mock、基础单测
 
+[1.1.0]: https://github.com/Eason4869/astrbot_plugin_ooptra/compare/v1.0.0...main
 [1.0.0]: https://github.com/Eason4869/astrbot_plugin_ooptra/compare/v0.4.0...v1.0.0
 [0.4.0]: https://github.com/Eason4869/astrbot_plugin_ooptra/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Eason4869/astrbot_plugin_ooptra/compare/v0.2.1...v0.3.0
