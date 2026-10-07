@@ -77,6 +77,27 @@ class TestWebRoutes(unittest.IsolatedAsyncioTestCase):
         self.assertIn('event: line\ndata: {"line":"connected"}\n\n', await response.get_data(as_text=True))
         self.assertEqual(dict(self.requests[0].url.params), {"file": "oopz_bot.log", "lines": "10"})
 
+    async def test_backup_download_is_authenticated_and_validates_fixed_identifier(self):
+        response = await self.client.get(self.prefix + "backup-download?id=" + "a" * 32)
+        self.assertEqual(response.status_code, 401)
+        response = await self.client.get(self.prefix + "backup-download?id=../config.py", headers=self.auth)
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(self.requests, [])
+
+        def backup(req):
+            self.requests.append(req)
+            return httpx.Response(200, content=b"PK\x03\x04test-backup", headers={"Content-Type": "application/zip"})
+
+        self.plugin._client._transport = httpx.MockTransport(backup)
+        response = await self.client.get(self.prefix + "backup-download?id=" + "a" * 32, headers=self.auth)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(await response.get_data(), b"PK\x03\x04test-backup")
+        self.assertEqual(self.requests[-1].url.path, "/api/maintenance/backups/" + "a" * 32)
+        self.assertEqual(self.requests[-1].headers["Authorization"], "Bearer secret")
+        await self.plugin.terminate()
+        response = await self.client.get(self.prefix + "backup-download?id=" + "a" * 32, headers=self.auth)
+        self.assertEqual(response.status_code, 410)
+
     async def test_termination_unregisters_only_own_routes_and_blocks_retained_handlers(self):
         other = ("/another", lambda: None, ["GET"], "another plugin")
         self.plugin.context.registered_web_apis.append(other)

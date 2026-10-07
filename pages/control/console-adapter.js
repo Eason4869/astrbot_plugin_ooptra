@@ -102,7 +102,13 @@
     input.select();
   }
 
-  window.OoptraPanel = {api, storage, EventSource: LogSource, openLink};
+  async function downloadBackup(id) {
+    if (!/^[a-f0-9]{32}$/.test(id)) throw new Error('备份 ID 无效。');
+    await ready;
+    return bridge.download('ui/backup-download', {id}, `ooptra-${id}.zip`);
+  }
+
+  window.OoptraPanel = {api, storage, EventSource: LogSource, openLink, downloadBackup};
   document.addEventListener('DOMContentLoaded', () => {
     const buttons = document.querySelectorAll('[data-theme-toggle]');
     function apply(dark) {

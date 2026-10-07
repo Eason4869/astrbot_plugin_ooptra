@@ -18,10 +18,13 @@ from .ooptra_client import (
 CONSOLE_ROUTES = {
     "GET": {"/api/status", "/api/credentials", "/api/update", "/api/logs", "/api/logs/tail",
             "/api/config", "/api/login/browser", "/api/voice/status", "/api/voice/members",
-            "/api/oopz/areas", "/api/oopz/channels", "/api/persona", "/api/memory", "/api/voice/auto-visit"},
+            "/api/oopz/areas", "/api/oopz/channels", "/api/persona", "/api/memory", "/api/voice/auto-visit",
+            "/api/voice/preview/prompts", "/api/maintenance"},
     "POST": {"/api/config", "/api/login/browser", "/api/login/browser/cancel", "/api/login/api",
              "/api/bridge/restart", "/api/voice/join", "/api/voice/leave", "/api/voice/speak",
-             "/api/voice/auto-visit/config", "/api/voice/auto-visit/pause", "/api/voice/auto-visit/resume"},
+             "/api/voice/auto-visit/config", "/api/voice/auto-visit/pause", "/api/voice/auto-visit/resume",
+             "/api/voice/diagnostics", "/api/voice/preview", "/api/maintenance/check",
+             "/api/maintenance/backups", "/api/maintenance/update", "/api/maintenance/restore"},
     "PUT": {"/api/persona"},
     "DELETE": {"/api/memory"},
 }
@@ -190,7 +193,7 @@ class ControlPanel:
         if not isinstance(method, str) or not isinstance(path, str) or path not in CONSOLE_ROUTES.get(method, set()):
             raise ValueError("不支持的控制台接口。")
         params = _object(body.get("params", {}))
-        if any(key not in {"area", "channel", "file", "lines", "force"} for key in params):
+        if any(key not in {"area", "channel", "file", "lines", "force", "kind"} for key in params):
             raise ValueError("不支持的控制台查询参数。")
         payload = _object(body.get("body", {})) if method != "GET" else None
         if path in {"/api/voice/join", "/api/voice/leave"}:
@@ -206,6 +209,11 @@ class ControlPanel:
         # Serialize console writes, but preserve config-save + immediate reconnect.
         # Voice changes share the command cooldown; account/persona/reconnect do not.
         updates = payload.get("updates", {})
+        independent = path in {"/api/voice/preview", "/api/voice/diagnostics"}
+        if independent:
+            # Isolated browser previews do not mutate the room or command cooldown.
+            return _confirmed(await self.plugin.client._request(method, path, params=params, json_body=payload,
+                                                                timeout_sec=max(self.plugin.client.timeout, 55)))
         voice_change = path.startswith("/api/voice/") or (
             path == "/api/config" and isinstance(updates, dict) and "voice" in updates
         )
@@ -214,10 +222,19 @@ class ControlPanel:
             cooldown = self.plugin._check_voice_cooldown() if voice_change else None
             if cooldown:
                 raise ValueError(cooldown)
-            result = _confirmed(await self.plugin.client._request(method, path, params=params, json_body=payload))
+            kwargs = {"timeout_sec": max(self.plugin.client.timeout, 55)} if path.startswith("/api/maintenance/") else {}
+            result = _confirmed(await self.plugin.client._request(method, path, params=params, json_body=payload, **kwargs))
             if voice_change:
                 self.plugin._mark_voice_op()
             return result
+
+    async def backup(self, backup_id: str) -> bytes:
+        self.ensure_active()
+        if not isinstance(backup_id, str) or not re.fullmatch(r"[a-f0-9]{32}", backup_id):
+            raise ValueError("备份 ID 无效。")
+        result = await self.plugin.client.backup_bytes(backup_id)
+        self.ensure_active()
+        return result
 
     async def logs(self, params: dict):
         self.ensure_active()

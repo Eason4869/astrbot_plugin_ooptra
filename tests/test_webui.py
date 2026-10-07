@@ -207,6 +207,24 @@ class TestControlPanel(unittest.IsolatedAsyncioTestCase):
         await self.panel.console({"method": "POST", "path": "/api/voice/join", "body": {"area": "", "channel": ""}})
         self.assertEqual(json.loads(self.requests[-1].content), {"area": "AREA-A", "channel": "CHANNEL-A"})
 
+    async def test_preview_and_diagnostics_do_not_block_real_voice_controls(self):
+        for path in ("/api/voice/preview", "/api/voice/diagnostics"):
+            self.responses[path] = {"ok": True}
+            await self.panel.console({"method": "POST", "path": path, "body": {"text": "你好"}})
+        await self.panel.action({"action": "leave"})
+
+    async def test_new_console_routes_preserve_methods_and_query(self):
+        for method, path, params in (("GET", "/api/voice/preview/prompts", {"kind": "enter", "area": "AREA-A"}),
+                                     ("GET", "/api/maintenance", {}),
+                                     ("POST", "/api/maintenance/check", {}),
+                                     ("POST", "/api/maintenance/backups", {}),
+                                     ("POST", "/api/maintenance/update", {}),
+                                     ("POST", "/api/maintenance/restore", {})):
+            self.responses[path] = {"ok": True}
+            await self.panel.console({"method": method, "path": path, "params": params, "body": {"channel": "dev"}})
+            self.assertEqual(self.requests[-1].method, method)
+            self.assertEqual(dict(self.requests[-1].url.params), params)
+
     async def test_full_console_does_not_apply_default_channel_to_other_area(self):
         with self.assertRaises(ValueError):
             await self.panel.console({"method": "POST", "path": "/api/voice/join", "body": {"area": "AREA-B", "channel": ""}})

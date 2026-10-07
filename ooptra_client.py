@@ -82,6 +82,7 @@ class OoptraClient:
         *,
         params: dict[str, Any] | None = None,
         json_body: dict[str, Any] | None = None,
+        timeout_sec: float | None = None,
     ) -> Any:
         if not self.base_url:
             raise OoptraError("未配置 Ooptra VOICE_API 地址（api_base）")
@@ -92,7 +93,7 @@ class OoptraClient:
             raise OoptraError("缺少依赖 httpx，请先 pip install httpx") from exc
 
         url = f"{self.base_url}{path}"
-        timeout = httpx.Timeout(self.timeout)
+        timeout = httpx.Timeout(timeout_sec or self.timeout)
         try:
             # trust_env=False 是**必须**的：httpx 与 requests 不同，它**不会**自动
             # 绕过 localhost 代理。开着 trust_env，系统里的 HTTP_PROXY/HTTPS_PROXY
@@ -193,6 +194,28 @@ class OoptraClient:
 
     async def areas(self) -> dict[str, Any]:
         return _expect_mapping(await self._request("GET", "/oopz/areas"), "/oopz/areas")
+
+    async def backup_bytes(self, backup_id: str) -> bytes:
+        """Download a validated backup with a bounded buffer and backend-only auth."""
+        import httpx
+
+        limit = 128 * 1024 * 1024
+        chunks, size = [], 0
+        try:
+            async with httpx.AsyncClient(timeout=max(self.timeout, 60), trust_env=False,
+                                         transport=self._transport) as client:
+                async with client.stream("GET", f"{self.base_url}/api/maintenance/backups/{backup_id}",
+                                         headers=self._headers()) as response:
+                    if response.status_code != 200:
+                        raise OoptraError("备份下载失败，请检查备份是否存在及 Ooptra 访问令牌。")
+                    async for chunk in response.aiter_bytes():
+                        size += len(chunk)
+                        if size > limit:
+                            raise OoptraError("备份超过 128 MiB，请在 Ooptra 控制台直接下载。")
+                        chunks.append(chunk)
+            return b"".join(chunks)
+        except httpx.HTTPError as exc:
+            raise OoptraError("Ooptra 备份下载连接中断。") from exc
 
     async def stream_logs(self, file: str, lines: int):
         """Forward SSE without buffering the stream or forwarding browser credentials."""

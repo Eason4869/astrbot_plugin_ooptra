@@ -155,3 +155,22 @@ def register_panel(plugin: Any) -> None:
 
     register("logs", logs, "GET", "Ooptra console log stream")
     register("logs-download", download_logs, "GET", "Ooptra console log download")
+
+    async def download_backup():
+        if not username():
+            return error_response("请先登录 AstrBot 管理面板。", status_code=401)
+        try:
+            backup_id = query().get("id", "")
+            content = await panel.backup(backup_id)
+            headers = {"Content-Disposition": f'attachment; filename="ooptra-{backup_id}.zip"', "Cache-Control": "no-store"}
+            if Response.__module__.startswith("starlette"):
+                return Response(content, media_type="application/zip", headers=headers)
+            return Response(content, content_type="application/zip", headers=headers)
+        except PanelInactive as exc:
+            return error_response(str(exc), status_code=410)
+        except ValueError as exc:
+            return error_response(str(exc), status_code=400)
+        except OoptraError as exc:
+            return error_response(str(exc), status_code=502)
+
+    register("backup-download", download_backup, "GET", "Ooptra console backup download")

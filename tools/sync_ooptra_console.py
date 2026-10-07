@@ -23,6 +23,13 @@ def bundle(source: Path) -> None:
     app = app.replace("new EventSource(", "new window.OoptraPanel.EventSource(")
     app = app.replace("window.open(", "window.OoptraPanel.openLink(")
     (target / "console-app.js").write_text("/* Bundled from Ooptra; see CONSOLE_SOURCE.md. */\n" + app.rstrip() + "\n", encoding="utf-8", newline="\n")
+    maintenance = (assets / "maintenance.js").read_text(encoding="utf-8")
+    original = "link.href = withToken('/api/maintenance/backups/' + encodeURIComponent(item.id));"
+    replacement = "link.href = '#';\n      link.addEventListener('click', event => { event.preventDefault(); window.OoptraPanel.downloadBackup(item.id).catch(err => toast('下载失败', err.message, 'err')); });"
+    if original not in maintenance:
+        raise ValueError("Ooptra backup link changed; review the download adaptation.")
+    maintenance = maintenance.replace(original, replacement)
+    (target / "console-maintenance.js").write_text(maintenance.rstrip() + "\n", encoding="utf-8", newline="\n")
     for name, output in (("style.css", "console.css"), ("logo.svg", "logo.svg"), ("favicon.svg", "favicon.svg")):
         (target / output).write_bytes((assets / name).read_bytes())
     html = (assets / "index.html").read_text(encoding="utf-8")
@@ -32,6 +39,7 @@ def bundle(source: Path) -> None:
     # AstrBot injects its SDK at the end of body. Deferred scripts run after it,
     # in document order and before the console's DOMContentLoaded boot handler.
     html = html.replace('<script src="./app.js"></script>', '<script defer src="./console-adapter.js"></script>\n<script defer src="./console-app.js"></script>')
+    html = html.replace('<script src="./maintenance.js"></script>', '<script defer src="./console-maintenance.js"></script>')
     html = html.replace('<div class="page-tools" id="page-tools"></div>', '<a class="btn ghost" href="./index.html">返回插件工作台</a>\n        <div class="page-tools" id="page-tools"></div>')
     html = html.replace('</head>', '<link rel="stylesheet" href="./console-extra.css" />\n</head>')
     (target / "full.html").write_text(html, encoding="utf-8", newline="\n")

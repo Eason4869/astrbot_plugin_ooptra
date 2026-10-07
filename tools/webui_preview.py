@@ -9,11 +9,15 @@ from __future__ import annotations
 import argparse
 import ast
 import asyncio
+import base64
 import importlib.util
+import io
 import json
 import re
 import sys
 import types
+import wave
+import zipfile
 from copy import deepcopy
 from pathlib import Path
 from urllib.parse import urlencode, urlunsplit
@@ -92,6 +96,8 @@ def build_app(astrbot_source: Path):
     failure = {"offline": False}
     initial_config = deepcopy(dict(config))
     initial_state = dict(state)
+    maintenance = {"ok": True, "preflight": {"supported": True, "checks": [{"id": "preview", "passed": True, "detail": "模拟部署检查"}]},
+                   "backups": [], "job": None, "check": None, "busy": False, "restore_supported": True}
 
     def upstream(request):
         calls.append({"method": request.method, "path": request.url.path,
@@ -128,6 +134,34 @@ def build_app(astrbot_source: Path):
             data = {"ok": True, "changed": {key: list(value) for key, value in updates.items()}, "hot_reloaded_fields": ["backend"], "notes": [], "restart_required": False}
         elif path == "/api/bridge/restart":
             data = {"ok": True}
+        elif path == "/api/maintenance":
+            data = maintenance
+        elif path == "/api/maintenance/check":
+            maintenance["check"] = {"channel": body["channel"], "available": True, "target_sha": "a" * 40}
+            data = {"ok": True, **maintenance["check"]}
+        elif path == "/api/maintenance/backups":
+            maintenance["backups"] = [{"id": "a" * 32, "created_at": 1791302400, "size": 1024}]
+            data = {"ok": True}
+        elif path.startswith("/api/maintenance/backups/"):
+            archive = io.BytesIO()
+            with zipfile.ZipFile(archive, "w") as zipped:
+                zipped.writestr("preview.txt", "AstrBot backup bridge verified")
+            return httpx.Response(200, content=archive.getvalue(), headers={"Content-Type": "application/zip"})
+        elif path in {"/api/maintenance/update", "/api/maintenance/restore"}:
+            maintenance["job"] = {"phase": "complete", "detail": "模拟维护已完成"}
+            data = {"ok": True}
+        elif path == "/api/voice/diagnostics":
+            data = {"ok": True, "checks": [{"title": "模拟环境检查", "state": "pass", "detail": "AstrBot diagnostics bridge verified"}]}
+        elif path == "/api/voice/preview/prompts":
+            data = {"ok": True, "prompts": ["在玩什么游戏？", "拜拜，我下了"]}
+        elif path == "/api/voice/preview":
+            wav = io.BytesIO()
+            with wave.open(wav, "wb") as audio:
+                audio.setnchannels(1)
+                audio.setsampwidth(2)
+                audio.setframerate(8000)
+                audio.writeframes(b"\x00\x00" * 800)
+            data = {"ok": True, "text": body["text"], "wav_base64": base64.b64encode(wav.getvalue()).decode()}
         else:
             plain = path.removeprefix("/api")
             if plain == "/voice/status":
@@ -201,6 +235,7 @@ def build_app(astrbot_source: Path):
         failure["offline"] = False
         calls.clear()
         plugin._last_voice_op_at = 0.0
+        maintenance.update(backups=[], job=None, check=None, busy=False)
         return {"ok": True}
 
     @app.post("/test/failure")

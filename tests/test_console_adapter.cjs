@@ -86,3 +86,12 @@ test('log download uses Dashboard bridge rather than sandbox popup', async () =>
   assert.equal(a.requests[0].endpoint, 'ui/logs-download');
   assert.equal(a.requests[0].params.lines, '20000');
 });
+
+test('backup download stays in the authenticated bridge with a fixed identifier', async () => {
+  const a = adapter();
+  await a.panel.downloadBackup('a'.repeat(32));
+  assert.equal(a.requests[0].endpoint, 'ui/backup-download');
+  assert.equal(a.requests[0].filename, 'ooptra-' + 'a'.repeat(32) + '.zip');
+  await assert.rejects(a.panel.downloadBackup('../config.py'));
+  assert.equal(a.requests.length, 1);
+});

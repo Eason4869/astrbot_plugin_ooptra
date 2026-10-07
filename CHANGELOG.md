@@ -2,6 +2,16 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号尽量符合 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.2.2] - 2026-10-07
+
+### Changed
+
+- 同步 Ooptra dev `261007-beta`（基础版本 3.1.0，提交 `4d3e4a5`）的 WebUI、响应式布局和当前会话状态
+- 完整控制台增加「自检与试听」与「更新与备份」页面，支持诊断、独立 WAV 试听、台词读取和维护操作
+- 补充新接口白名单、长请求超时与经过 AstrBot 鉴权的备份下载；试听和自检不占用房间操作锁或语音冷却
+- 备份通过 AstrBot 下载，校验固定备份 ID 并限制单次缓冲为 128 MiB；更大的备份在 Ooptra 控制台直接下载
+- 前端同步工具打包新增脚本并保留 SDK 延迟初始化；扩展接口、下载及浏览器回归验证
+
 ## [1.2.1] - 2026-10-07
 
 ### Fixed
@@ -150,7 +160,8 @@
 - QQ 指令：语音状态/进退语音/绑定解绑/自检/帮助
 - LLM 工具与 VOICE_API 客户端、mock、基础单测
 
-[1.2.1]: https://github.com/Eason4869/astrbot_plugin_ooptra/compare/b53f9f8...main
+[1.2.2]: https://github.com/Eason4869/astrbot_plugin_ooptra/compare/152af42...v1.2.2
+[1.2.1]: https://github.com/Eason4869/astrbot_plugin_ooptra/compare/b53f9f8...152af42
 [1.2.0]: https://github.com/Eason4869/astrbot_plugin_ooptra/compare/v1.1.0...b53f9f8
 [1.1.0]: https://github.com/Eason4869/astrbot_plugin_ooptra/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/Eason4869/astrbot_plugin_ooptra/compare/v0.4.0...v1.0.0
