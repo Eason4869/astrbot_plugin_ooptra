@@ -147,14 +147,14 @@ class TestControlPanel(unittest.IsolatedAsyncioTestCase):
         result = await self.panel.console({"method": "GET", "path": "/api/status", "params": {}})
         self.assertTrue(result["bridge"]["connected"])
         self.assertEqual(self.requests[-1].headers["Authorization"], "Bearer server-only-secret")
-        for path in ("https://evil.example/", "/api/../admin", "/assets/config.py", "/api/unknown"):
+        for path in ("https://evil.example/", "/api/../admin", "/assets/config.py", "/api/%2e%2e/admin"):
             with self.subTest(path=path), self.assertRaises(ValueError):
                 await self.panel.console({"method": "GET", "path": path})
         self.assertEqual(len(self.requests), 1)
 
     async def test_full_console_cannot_supply_token_or_override_destination(self):
         for body in ({"path": "/api/status", "params": {"token": "injected"}},
-                     {"path": "/api/config", "method": "DELETE"},
+                     {"path": "/api/config", "method": "TRACE"},
                      {"path": "/api/config", "method": "POST", "body": []}):
             with self.subTest(body=body), self.assertRaises(ValueError):
                 await self.panel.console(body)

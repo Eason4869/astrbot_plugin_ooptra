@@ -94,10 +94,12 @@ def build_app(astrbot_source: Path):
              "area": "demo-area", "channel": "demo-channel", "default_area": "demo-area", "default_channel": "demo-channel"}
     calls = []
     failure = {"offline": False}
+    deployed = {"version": "deployment-one"}
+    assets = ROOT.parent / "_dev_261006/src/webui/assets"
     initial_config = deepcopy(dict(config))
     initial_state = dict(state)
     maintenance = {"ok": True, "preflight": {"supported": True, "checks": [{"id": "preview", "passed": True, "detail": "模拟部署检查"}]},
-                   "backups": [], "job": None, "check": None, "busy": False, "restore_supported": True}
+                   "backups": [], "job": None, "check": None, "busy": False, "restore_supported": True, "current_channel": "dev"}
 
     def upstream(request):
         calls.append({"method": request.method, "path": request.url.path,
@@ -108,7 +110,20 @@ def build_app(astrbot_source: Path):
             return httpx.Response(503, json={"ok": False, "error": "Ooptra 测试服务已离线"})
         path = request.url.path
         body = json.loads(request.content) if request.content else {}
-        if path == "/api/status":
+        if path == "/" or path.startswith("/assets/"):
+            name = "index.html" if path == "/" else path.rsplit("/", 1)[-1]
+            file = assets / name
+            if not file.is_file():
+                return httpx.Response(404)
+            content = file.read_bytes()
+            if name == "config.js" and deployed.get("broken_script"):
+                content = (b"document.addEventListener('DOMContentLoaded',()=>{throw new Error('incompatible deployed script')});"
+                           if deployed["broken_script"] == "domcontentloaded" else b"throw new Error('incompatible deployed script');")
+            if name == "index.html":
+                content = content.replace(b"</body>", ('<span id="deployed-version" hidden>' + deployed["version"] + '</span></body>').encode())
+            mime = {".html": "text/html", ".css": "text/css", ".js": "text/javascript", ".svg": "image/svg+xml"}[file.suffix]
+            return httpx.Response(200, content=content, headers={"Content-Type": mime})
+        elif path == "/api/status":
             data = {"ok": True, "process": {"version": "3.0.2", "pid": 302, "python": "3.12", "platform": "preview"},
                 "bridge": {"runtime": {"running": True, "uptime_seconds": 3600},
                     "oopz": {"connected": True, "nickname": "Ooptra", "self_uid": "preview-bot", "target": "Oopz", "joined_areas": 2},
@@ -136,8 +151,12 @@ def build_app(astrbot_source: Path):
             data = {"ok": True}
         elif path == "/api/maintenance":
             data = maintenance
+        elif path == "/api/maintenance/preflight":
+            data = {"ok": True, "preflight": maintenance["preflight"]}
+        elif path == "/api/maintenance/storage":
+            data = {"ok": True, "storage": {"backups_bytes": 1024, "backups_count": len(maintenance["backups"])}}
         elif path == "/api/maintenance/check":
-            maintenance["check"] = {"channel": body["channel"], "available": True, "target_sha": "a" * 40}
+            maintenance["check"] = {"channel": body.get("channel", "dev"), "available": True, "target_sha": "a" * 40}
             data = {"ok": True, **maintenance["check"]}
         elif path == "/api/maintenance/backups":
             maintenance["backups"] = [{"id": "a" * 32, "created_at": 1791302400, "size": 1024}]
@@ -233,6 +252,8 @@ def build_app(astrbot_source: Path):
         state.clear()
         state.update(initial_state)
         failure["offline"] = False
+        deployed.clear()
+        deployed.update(version="deployment-one")
         calls.clear()
         plugin._last_voice_op_at = 0.0
         maintenance.update(backups=[], job=None, check=None, busy=False)
@@ -242,6 +263,11 @@ def build_app(astrbot_source: Path):
     async def test_failure(request: Request):
         failure.update(await request.json())
         return failure
+
+    @app.post("/test/deployed")
+    async def test_deployed(request: Request):
+        deployed.update(await request.json())
+        return deployed
 
     @app.get("/")
     async def host():

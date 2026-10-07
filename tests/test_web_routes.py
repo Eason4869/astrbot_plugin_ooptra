@@ -104,7 +104,7 @@ class TestWebRoutes(unittest.IsolatedAsyncioTestCase):
         await self.plugin.terminate()
         self.assertEqual(self.plugin.context.registered_web_apis, [other])
         # Quart retains the handlers even after unregistering, exercising the lifecycle guard.
-        for endpoint in ("bootstrap", "status", "logs", "logs-download"):
+        for endpoint in ("bootstrap", "status", "logs", "logs-download", "console-page"):
             response = await self.client.get(self.prefix + endpoint, headers=self.auth)
             self.assertEqual(response.status_code, 410)
         for endpoint, body in (("binding", {"group_id": "123456", "areas": ["AREA-A"]}),
@@ -113,6 +113,11 @@ class TestWebRoutes(unittest.IsolatedAsyncioTestCase):
             response = await self.client.post(self.prefix + endpoint, headers=self.auth, json=body)
             self.assertEqual(response.status_code, 410)
         self.assertEqual(self.config.saved, 0)
+        self.assertEqual(self.requests, [])
+
+    async def test_console_page_requires_auth_before_any_upstream_fetch(self):
+        response = await self.client.get(self.prefix + "console-page")
+        self.assertEqual(response.status_code, 401)
         self.assertEqual(self.requests, [])
 
     async def test_termination_cancels_open_log_stream_and_releases_upstream(self):

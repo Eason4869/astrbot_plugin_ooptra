@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from .live_console import API_PATH, load_console
 from .ooptra_client import (
     BACKEND_LABELS,
     OoptraError,
@@ -14,17 +15,18 @@ from .ooptra_client import (
     resolve_group_mapping,
 )
 
-# The full console can call only these known Ooptra routes, never arbitrary URLs.
+# Deployed frontend code still calls only reviewed routes on the configured instance.
 CONSOLE_ROUTES = {
     "GET": {"/api/status", "/api/credentials", "/api/update", "/api/logs", "/api/logs/tail",
             "/api/config", "/api/login/browser", "/api/voice/status", "/api/voice/members",
             "/api/oopz/areas", "/api/oopz/channels", "/api/persona", "/api/memory", "/api/voice/auto-visit",
-            "/api/voice/preview/prompts", "/api/maintenance"},
+            "/api/voice/preview/prompts", "/api/maintenance", "/api/maintenance/preflight", "/api/maintenance/storage"},
     "POST": {"/api/config", "/api/login/browser", "/api/login/browser/cancel", "/api/login/api",
              "/api/bridge/restart", "/api/voice/join", "/api/voice/leave", "/api/voice/speak",
              "/api/voice/auto-visit/config", "/api/voice/auto-visit/pause", "/api/voice/auto-visit/resume",
              "/api/voice/diagnostics", "/api/voice/preview", "/api/maintenance/check",
-             "/api/maintenance/backups", "/api/maintenance/update", "/api/maintenance/restore"},
+             "/api/maintenance/backups", "/api/maintenance/update", "/api/maintenance/restore",
+             "/api/maintenance/network/test", "/api/maintenance/cleanup/preview", "/api/maintenance/cleanup/apply"},
     "PUT": {"/api/persona"},
     "DELETE": {"/api/memory"},
 }
@@ -186,14 +188,25 @@ class ControlPanel:
         return {"ok": True, "message": message, "result": result,
                 "applied": applied if action == "backend" else True}
 
+    async def console_page(self) -> dict:
+        self.ensure_active()
+        result = await load_console(self.plugin.client)
+        self.ensure_active()
+        return result
+
     async def console(self, value: Any) -> dict:
         self.ensure_active()
         body = _object(value)
         method, path = body.get("method", "GET"), body.get("path")
-        if not isinstance(method, str) or not isinstance(path, str) or path not in CONSOLE_ROUTES.get(method, set()):
+        backup_delete = (method == "DELETE" and isinstance(path, str)
+                         and re.fullmatch(r"/api/maintenance/backups/[a-f0-9]{32}", path))
+        if (not isinstance(method, str) or not isinstance(path, str)
+                or not API_PATH.fullmatch(path) or (path not in CONSOLE_ROUTES.get(method, set()) and not backup_delete)):
             raise ValueError("不支持的控制台接口。")
         params = _object(body.get("params", {}))
-        if any(key not in {"area", "channel", "file", "lines", "force", "kind"} for key in params):
+        if len(params) > 64 or any(key not in {"area", "channel", "file", "lines", "force", "kind", "page", "page_size"}
+                                  or not isinstance(item, (str, int, float, bool)) or len(str(item)) > 8192
+                                  for key, item in params.items()):
             raise ValueError("不支持的控制台查询参数。")
         payload = _object(body.get("body", {})) if method != "GET" else None
         if path in {"/api/voice/join", "/api/voice/leave"}:
@@ -205,7 +218,9 @@ class ControlPanel:
                     action["channel"] = status.get("default_channel", "")
             return (await self.action(action))["result"]
         if method == "GET":
-            return await self.plugin.client._request(method, path, params=params)
+            kwargs = {"timeout_sec": max(self.plugin.client.timeout, 20)} if path in {
+                "/api/maintenance/preflight", "/api/maintenance/storage"} else {}
+            return await self.plugin.client._request(method, path, params=params, **kwargs)
         # Serialize console writes, but preserve config-save + immediate reconnect.
         # Voice changes share the command cooldown; account/persona/reconnect do not.
         updates = payload.get("updates", {})

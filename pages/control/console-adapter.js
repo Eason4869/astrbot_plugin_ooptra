@@ -3,6 +3,10 @@
   'use strict';
   const bridge = window.AstrBotPluginView || window.AstrBotPluginPage;
   const values = new Map();
+  const logSources = new Set();
+  function ensureRunning() {
+    if (window.__ooptraBootFailed) throw new Error('部署中的控制台初始化失败，请刷新重试。');
+  }
   const storage = {
     getItem: key => values.has(key) ? values.get(key) : null,
     setItem: (key, value) => values.set(key, String(value)),
@@ -16,6 +20,7 @@
 
   async function api(path, opts = {}) {
     await ready;
+    ensureRunning();
     const parsed = parse(path);
     // Ooptra's token is attached by the plugin backend, never by the browser.
     delete parsed.params.token;
@@ -24,17 +29,20 @@
 
   class LogSource {
     constructor(path) {
+      ensureRunning();
       this.listeners = new Map();
       this.closed = false;
       this.subscription = null;
       this.retryTimer = null;
       this.params = parse(path).params;
+      logSources.add(this);
       this.connect();
     }
     async connect() {
       try {
         await ready;
         if (this.closed) return;
+        ensureRunning();
         const id = await bridge.subscribeSSE('ui/logs', {
           onMessage: event => {
             if (this.closed) return;
@@ -64,6 +72,7 @@
       this.listeners.set(name, handlers);
     }
     close() {
+      logSources.delete(this);
       this.closed = true;
       clearTimeout(this.retryTimer);
       if (this.subscription) bridge.unsubscribeSSE(this.subscription).catch(() => {});
@@ -73,6 +82,7 @@
   async function openLink(path) {
     if (path.startsWith('/api/logs/tail')) {
       await ready;
+      ensureRunning();
       return bridge.download('ui/logs-download', parse(path).params, 'ooptra-logs.txt');
     }
     // External project links have no navigation privilege in the view sandbox.
@@ -105,17 +115,37 @@
   async function downloadBackup(id) {
     if (!/^[a-f0-9]{32}$/.test(id)) throw new Error('备份 ID 无效。');
     await ready;
+    ensureRunning();
     return bridge.download('ui/backup-download', {id}, `ooptra-${id}.zip`);
   }
 
-  window.OoptraPanel = {api, storage, EventSource: LogSource, openLink, downloadBackup};
+  window.OoptraPanel = {api, storage, EventSource: LogSource, openLink, downloadBackup,
+    stop: () => {window.__ooptraBootFailed = true; [...logSources].forEach(source => source.close());}};
   document.addEventListener('DOMContentLoaded', () => {
+    if (document.getElementById('console-load-title')) return;
+    if (window.__ooptraAdapterMounted) return;
+    window.__ooptraAdapterMounted = true;
+    document.addEventListener('click', event => {
+      const anchor = event.target.closest?.('a[href]');
+      if (!anchor) return;
+      const href = anchor.getAttribute('href');
+      const url = new URL(href, 'https://ooptra.invalid');
+      if (url.pathname.startsWith('/api/maintenance/backups/')) {
+        event.preventDefault();
+        downloadBackup(url.pathname.split('/').pop()).catch(error => {
+          if (typeof window.toast === 'function') window.toast('下载失败', error.message, 'err');
+        });
+      } else if (/^https?:\/\//i.test(href)) {
+        event.preventDefault();
+        openLink(href);
+      }
+    });
     const buttons = document.querySelectorAll('[data-theme-toggle]');
     function apply(dark) {
       document.documentElement.dataset.theme = dark ? 'dark' : 'light';
       buttons.forEach(button => button.setAttribute('aria-checked', String(dark)));
     }
     if (bridge) bridge.onContext(context => apply(Boolean(context.isDark)));
-    buttons.forEach(button => button.addEventListener('click', () => apply(document.documentElement.dataset.theme !== 'dark')));
+    // Deployed theme.js owns the toggle; follow AstrBot only for initial context.
   });
 })();

@@ -160,13 +160,16 @@ Plugin Pages / Views 的 AstrBot 后端和 Dashboard；旧版若没有页面入�
 - **完整控制台**：点击「打开完整控制台」，直接在 AstrBot 内进入 Ooptra 原界面，
   继续管理账号、模型配置、日志、人格、记忆和详细串门规则；点击「返回插件工作台」返回。
 
-两种界面沿用 Ooptra 的视觉样式，并跟随 AstrBot 明暗主题。1.2.2 的完整控制台使用
-随插件打包的 Ooptra dev **261007-beta**（基础版本 3.1.0）前端和兼容层，数据及操作仍来自实际 Ooptra 服务。
-Ooptra 更新增加新界面功能时，需要同步更新插件的前端快照，详见
-[前端来源与同步方式](pages/control/CONSOLE_SOURCE.md)。
+**从 1.2.3 起，完整控制台实时读取当前部署的 Ooptra 页面**，包括原版 HTML、样式、图标和所有脚本，
+在 AstrBot 内部窗口中做沙箱兼容，不再显示插件打包的旧快照。Ooptra 更新后刷新控制台即可读取新页面。
+工作台保持 Ooptra 风格，完整控制台使用部署实例自己的视觉样式；初始主题跟随 AstrBot。
+详见[前端来源与兼容方式](pages/control/CONSOLE_SOURCE.md)。
 
-完整控制台新增 **自检与试听**（诊断、独立音频试听和进退房台词）及 **更新与备份**。
-这些新功能需要 Ooptra `261007-beta` 或包含相应接口的更新版本；旧服务缺少接口时会明确报错。
+接口仍使用已审核的方法与路由白名单。若后续 Ooptra 增加新的接口或改变前端结构，可能需要升级插件兼容层；
+不支持的接口或页面会明确报错。控制台每次打开会读取服务，Ooptra 离线时显示重试与返回入口，不回退到旧版页面。
+
+部署的 Ooptra 支持时，完整控制台提供 **自检与试听**（诊断、独立音频试听和进退房台词）及 **更新与备份**。
+这些新功能需要 Ooptra `261007-beta` 或包含相应接口的更新版本；1.2.3 已联调 Ooptra **3.2.0** 前端，旧服务缺少接口时会明确报错。
 试听音频在浏览器播放，不进入语音房，也不写共享记忆。维护操作由 Ooptra 检查部署能力并执行，
 升级与恢复沿用原控制台的确认步骤。备份含配置与凭据，下载通过 AstrBot 鉴权；
 单次下载上限为 128 MiB，更大的备份请从 Ooptra 原控制台下载。
@@ -186,6 +189,8 @@ Ooptra 更新增加新界面功能时，需要同步更新插件的前端快照�
 页面通过 **浏览器 → AstrBot → 插件 → Ooptra** 调用接口，使用已有 `api_base`
 和 `api_token`，不会把 Ooptra 访问令牌下发到浏览器，也无需浏览器直接连接 Ooptra。
 请让 `api_base` 指向 **WebUI 端口（默认 3090）**，独立 VOICE_API 端口不能提供完整控制台。
+默认 `http://127.0.0.1:3090` 是从 **AstrBot 后端**连接 Ooptra，不是从访问者的浏览器连接；
+远程访问 AstrBot 无需额外公开 Ooptra 端口。不要把浏览器 iframe 地址写死为本机回环地址。
 Docker 部署时，这个地址必须从 **AstrBot 容器内**可访问：两个容器可使用服务名，
 访问宿主机可使用部署环境支持的宿主机地址；容器内 `127.0.0.1` 指向该容器自身。
 
@@ -264,6 +269,7 @@ astrbot_plugin_ooptra/
 ├── ooptra_client.py           # Ooptra 客户端与格式化
 ├── webui.py                   # 页面服务、群绑定与控制台路由白名单
 ├── web_routes.py              # AstrBot 原生 API / 旧版 Quart 适配
+├── live_console.py            # 实时页面与资源读取、部署前端沙箱兼容
 ├── pages/control/             # 简易工作台、完整控制台与兼容层
 ├── _conf_schema.json
 ├── metadata.yaml
@@ -275,6 +281,7 @@ astrbot_plugin_ooptra/
     ├── test_voice_backend.py  # 方案切换（权限/HTTP/并发/mock 联调）
     ├── test_webui.py          # 群绑定、完整控制台、冷却与停用保护
     ├── test_web_routes.py     # 可选 Quart 路由与 SSE 生命周期
+    ├── test_live_console.py   # 部署页面变化、资源限制与安全边界
     └── test_console_adapter.cjs # Node 内置测试运行器验证兼容层
 ```
 

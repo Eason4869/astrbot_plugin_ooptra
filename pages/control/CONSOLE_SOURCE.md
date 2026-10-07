@@ -1,39 +1,50 @@
-# Ooptra console source
+# Ooptra console source and runtime compatibility
 
-The full console is bundled from [Eason4869/Ooptra](https://github.com/Eason4869/Ooptra),
-version **261007-beta** (base version **3.1.0**), dev commit
-**4d3e4a526c13d4076fa989537be736747c897130**, under the MIT license (Copyright 2026 Eason4869).
-The plugin is distributed under the same license; see the repository's `LICENSE`.
+Starting with **1.2.3**, the full console loads from the **deployed Ooptra instance
+configured by api_base**, normally `http://127.0.0.1:3090`. HTML, stylesheet,
+images and scripts are read again whenever the console opens or refreshes.
+No Ooptra application snapshot is packaged or used as a fallback.
+The frontend belongs to [Eason4869/Ooptra](https://github.com/Eason4869/Ooptra),
+distributed under the MIT license (Copyright 2026 Eason4869).
 
-`console.css`, `logo.svg`, and `favicon.svg` are copied unchanged from
-`src/webui/assets/`. `full.html`, `console-app.js`, and `console-maintenance.js` retain the original layout and
-interaction code with these explicit compatibility changes:
+`live_console.py` reads the deployed scripts in document order, including split
+files such as `config.js` and `voice.js`. The `full.html` shell waits for AstrBot's
+injected SDK. Its loader replaces the visible document while preserving the SDK
+and message listeners, then executes the upstream scripts and initializes their
+boot handlers.
 
-- Static asset URLs are relative to this AstrBot view.
-- A return link opens the plugin's voice/group-binding workbench.
-- The central HTTP helper calls `console-adapter.js`, which uses the AstrBot bridge.
-- Console scripts use `defer` so AstrBot's SDK, injected at the end of body,
-  initializes before the adapter and the DOMContentLoaded boot handler.
-- Browser LocalStorage and SessionStorage are replaced with per-page memory.
-- Log events and downloads use the authenticated bridge instead of native
-  EventSource or popups. External GitHub links show a selectable address.
-- Backup downloads use the authenticated AstrBot bridge, validate 32 hexadecimal
-  ID characters, and limit each buffered download to 128 MiB.
-- Theme controls follow AstrBot's theme and permit a temporary page toggle.
+Explicit sandbox adaptations:
 
-The root `logo.png` is a 512 x 512 transparent rasterization of the unchanged
-Ooptra `logo.svg`, used because AstrBot discovers plugin logos as `logo.png`.
-Regenerate it with `node tools/render_plugin_logo.cjs /path/to/node_modules/playwright`
-using the system Microsoft Edge browser.
+- The central HTTP helper uses `console-adapter.js` and the authenticated bridge.
+  Only reviewed HTTP methods and paths in `webui.py` are permitted.
+- LocalStorage and SessionStorage become per-page memory.
+- Log events and downloads use the bridge; backup IDs are validated and each
+  buffered backup is limited to 128 MiB.
+- Static URLs become data URLs; the browser needs no network access to Ooptra.
+  External links display a selectable address.
+- A return link opens the plugin's voice/group-binding workbench. Initial theme
+  follows AstrBot; the deployed theme script owns its toggle.
 
-Regenerate the bundle after reviewing an Ooptra frontend update:
+The backend attaches the configured Ooptra token, accepts no destination URL
+from the browser, follows no redirects and fetches no external frontend resource.
+Each resource is limited to 2 MiB, at most 24 assets are read and the page/asset
+total is limited to 12 MiB. Current plain JavaScript and flat `/assets/` resources
+are supported. ES modules, CSS imports or dependent CSS resource URLs require
+additional compatibility work. Unsupported documents, missing assets and script
+startup errors display a failure with retry and return controls.
 
-```bash
-python tools/sync_ooptra_console.py /path/to/Ooptra
-```
+This removes frontend snapshot drift. Future changes to the API helper, resource
+structure or API routes may still require a plugin update. Configure a trusted
+Ooptra instance: its code executes inside the plugin sandbox and can use its
+existing authenticated bridge. Deployment upgrades/restores are performed and
+validated by Ooptra; automated browser checks use a mocked backend.
+The 1.2.3 browser checks use the Ooptra 3.2.0 frontend at commit
+`254cc95` and AstrBot's actual SDK/HTML processor; they cover refresh after a
+deployment change, startup errors and offline retry. They do not certify a
+production upgrade, real credentials or model audio.
 
-Keep the route allowlist in `webui.py` aligned with the new frontend, then run the
-Python tests, JavaScript adapter tests, and browser smoke checks. The bundle is a
-versioned snapshot; it does not automatically execute frontend code downloaded
-from the configured Ooptra server. New or removed server APIs can require an
-updated plugin bundle.
+The quick workbench remains bundled. Its base stylesheet `workbench-base.css`,
+unchanged `logo.svg` and `favicon.svg`
+originate from Ooptra commit `4d3e4a526c13d4076fa989537be736747c897130`.
+Root `logo.png` is a transparent 512 x 512 rasterization for AstrBot's plugin list.
+Regenerate with `node tools/render_plugin_logo.cjs /path/to/node_modules/playwright`.

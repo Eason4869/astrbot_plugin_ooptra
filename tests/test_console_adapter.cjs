@@ -25,7 +25,7 @@ function adapter({pendingStream = false} = {}) {
   const context = {window, document: {addEventListener() {}, documentElement: {dataset: {}}, querySelectorAll: () => []},
     URL, URLSearchParams, setTimeout, clearTimeout, console};
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../pages/control/console-adapter.js'), 'utf8'), context);
-  return {panel: window.OoptraPanel, requests, handlers: () => streamHandlers,
+  return {panel: window.OoptraPanel, requests, failBoot: () => {window.__ooptraBootFailed = true;}, handlers: () => streamHandlers,
     resolveStream: () => resolveStream('sse-1'), unsubscribed: () => unsubscribed};
 }
 
@@ -54,6 +54,24 @@ test('full console preferences work without sandbox LocalStorage', () => {
   assert.equal(panel.storage.getItem('area'), 'AREA-A');
   panel.storage.removeItem('area');
   assert.equal(panel.storage.getItem('area'), null);
+});
+
+test('failed startup stops API, SSE and authenticated downloads', async () => {
+  const a = adapter();
+  a.failBoot();
+  await assert.rejects(a.panel.api('/api/status'), /初始化失败/);
+  assert.throws(() => new a.panel.EventSource('/api/logs/stream'), /初始化失败/);
+  await assert.rejects(a.panel.downloadBackup('a'.repeat(32)), /初始化失败/);
+  await assert.rejects(a.panel.openLink('/api/logs/tail'), /初始化失败/);
+  assert.deepEqual(a.requests, []);
+});
+
+test('stopping an initialized console releases its SSE subscription', async () => {
+  const a = adapter();
+  new a.panel.EventSource('/api/logs/stream');
+  await new Promise(resolve => setTimeout(resolve, 0));
+  a.panel.stop();
+  assert.equal(a.unsubscribed(), 'sse-1');
 });
 
 test('named SSE events reach original console listeners and unsubscribe', async () => {

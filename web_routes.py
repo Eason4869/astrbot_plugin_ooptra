@@ -105,6 +105,9 @@ def register_panel(plugin: Any) -> None:
     async def status(_):
         return await panel.status()
 
+    async def console_page(_):
+        return await panel.console_page()
+
     async def areas(_):
         return await panel.areas()
 
@@ -115,7 +118,7 @@ def register_panel(plugin: Any) -> None:
         return await panel.members(args.get("area", ""), args.get("channel", ""))
 
     for name, operation in (("bootstrap", bootstrap), ("status", status), ("areas", areas),
-                            ("channels", channels), ("members", members)):
+                            ("channels", channels), ("members", members), ("console-page", console_page)):
         route(name, "GET", operation)
     for name, operation in (("action", panel.action), ("binding", panel.save_binding),
                             ("unbind", panel.delete_binding), ("console", panel.console)):

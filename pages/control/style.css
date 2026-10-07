@@ -1,5 +1,5 @@
 /* Reuse the bundled Ooptra tokens and controls verbatim. */
-@import url("./console.css");
+@import url("./workbench-base.css");
 .dependency-notice { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 20px; margin-bottom: 24px; border: 1px solid var(--warn-line); border-left: 4px solid var(--warn); border-radius: 8px; background: var(--warn-soft); color: var(--warn-text); }
 .dependency-notice strong { font-size: 15px; line-height: 1.6; }
 .dependency-notice p { margin-top: 4px; font-size: 12px; line-height: 1.65; }

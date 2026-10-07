@@ -2,6 +2,17 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号尽量符合 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.2.3] - 2026-10-07
+
+### Changed
+
+- 完整控制台改为从插件配置的 Ooptra WebUI 实时加载 HTML、样式、图标及全部脚本，不再随插件打包前端快照；刷新即读取当前部署版本
+- 保留 AstrBot 内的常用语音操作与群绑定；控制台在同一内部窗口打开，兼容新版拆分的配置与语音脚本
+- 浏览器存储、日志、下载和接口调用使用 AstrBot 兼容层；令牌只在后端使用，资源仅从配置的实例读取，不跟随重定向
+- 保留已审核的接口方法与路由白名单；资源缺失、服务离线或前端结构不兼容时明确报错，不回退到旧界面
+- 按 Ooptra 3.2.0 的明确接口补齐部署预检查、空间统计、网络测试、清理和备份删除兼容；备份删除限定有效 ID，维护冷读允许 20 秒等待
+- 补充部署页面变化、资源边界与内部页面加载验证，以及远程访问 / Docker 地址配置说明
+
 ## [1.2.2] - 2026-10-07
 
 ### Changed
@@ -160,6 +171,7 @@
 - QQ 指令：语音状态/进退语音/绑定解绑/自检/帮助
 - LLM 工具与 VOICE_API 客户端、mock、基础单测
 
+[1.2.3]: https://github.com/Eason4869/astrbot_plugin_ooptra/compare/v1.2.2...v1.2.3
 [1.2.2]: https://github.com/Eason4869/astrbot_plugin_ooptra/compare/152af42...v1.2.2
 [1.2.1]: https://github.com/Eason4869/astrbot_plugin_ooptra/compare/b53f9f8...152af42
 [1.2.0]: https://github.com/Eason4869/astrbot_plugin_ooptra/compare/v1.1.0...b53f9f8

@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import re
 from typing import Any
+from urllib.parse import urlsplit
 
 _ERROR_BODY_MAX = 160
 _CJK_RE = re.compile(r"[一-鿿]")
@@ -34,6 +35,17 @@ _ID_SAFE_RE = re.compile(r"^[\w.:-]{1,128}\Z")
 _HEALTH_FALLBACK_STATUS = frozenset({404, 405, 501})
 
 BACKEND_LABELS = {"gemini_live": "Gemini Live", "mimo_cascade": "MiMo 级联"}
+
+
+def console_resource_path(value: str) -> str:
+    url = urlsplit(value)
+    path = url.path if url.path.startswith("/") else "/" + url.path
+    valid = re.fullmatch(r"/assets/[A-Za-z0-9_.-]+\.(?:js|css|svg|png|ico|jpg|jpeg|webp|woff2?)", path)
+    if url.scheme or url.netloc or url.fragment or not (valid or path == "/favicon.ico"):
+        raise OoptraError("部署中的控制台引用了不支持的资源，请检查 Ooptra WebUI。")
+    if len(url.query) > 1024 or "token" in url.query.lower():
+        raise OoptraError("控制台资源查询参数不受支持。")
+    return path + ("?" + url.query if url.query else "")
 
 
 def normalize_backend(name: str) -> str:
@@ -194,6 +206,33 @@ class OoptraClient:
 
     async def areas(self) -> dict[str, Any]:
         return _expect_mapping(await self._request("GET", "/oopz/areas"), "/oopz/areas")
+
+    async def console_resource(self, path: str) -> tuple[bytes, str]:
+        """Fixed-origin, non-redirecting, bounded static frontend download."""
+        import httpx
+
+        if path != "/":
+            path = console_resource_path(path)
+        chunks, size = [], 0
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout, trust_env=False,
+                                         transport=self._transport, follow_redirects=False) as client:
+                async with client.stream("GET", self.base_url + path, headers=self._headers()) as response:
+                    if response.status_code != 200:
+                        raise OoptraError(f"读取部署中的 Ooptra 控制台失败（HTTP {response.status_code}），请检查地址、WebUI 和令牌。")
+                    mime = response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+                    if mime not in {"text/html", "text/css", "text/javascript", "application/javascript", "image/svg+xml",
+                                    "image/png", "image/jpeg", "image/webp", "image/x-icon", "image/vnd.microsoft.icon",
+                                    "font/woff", "font/woff2", "application/font-woff"}:
+                        raise OoptraError("Ooptra 控制台资源类型不受支持。")
+                    async for chunk in response.aiter_bytes():
+                        size += len(chunk)
+                        if size > 2 * 1024 * 1024:
+                            raise OoptraError("控制台单个资源超过 2 MiB，暂不支持此页面。")
+                        chunks.append(chunk)
+                    return b"".join(chunks), mime
+        except httpx.HTTPError as exc:
+            raise OoptraError("无法连接部署中的 Ooptra 控制台，请检查配置的地址。") from exc
 
     async def backup_bytes(self, backup_id: str) -> bytes:
         """Download a validated backup with a bounded buffer and backend-only auth."""

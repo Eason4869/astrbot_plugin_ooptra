@@ -14,6 +14,11 @@ fs.mkdirSync(output, {recursive: true});
   const page = await browser.newPage({viewport: {width: 1440, height: 1080}, reducedMotion: 'reduce'});
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
+  page.on('response', response => {
+    if (response.status() >= 400 && ['stylesheet', 'script', 'image'].includes(response.request().resourceType())) {
+      errors.push('resource HTTP ' + response.status() + ': ' + new URL(response.url()).pathname);
+    }
+  });
   const frame = page.frameLocator('iframe');
   async function capture(filename) {
     await page.frames()[1].evaluate(async () => {
@@ -78,6 +83,11 @@ fs.mkdirSync(output, {recursive: true});
 
     await frame.locator('#full-console').click();
     await frame.locator('#screen-app').waitFor({state: 'visible'});
+    assert.equal(await frame.locator('#deployed-version').textContent(), 'deployment-one');
+    await page.request.post(url + '/test/deployed', {data: {version: 'deployment-two'}});
+    await page.frames()[1].evaluate(() => location.reload());
+    await frame.locator('#screen-app').waitFor({state: 'visible'});
+    assert.equal(await frame.locator('#deployed-version').textContent(), 'deployment-two', 'refresh must load the deployed version, not a snapshot');
     await frame.locator('#verdict-title').filter({hasText: '链路正常'}).waitFor();
     // Refreshing the full document must also initialize against the injected SDK.
     const fullFrame = page.frames()[1];
@@ -173,6 +183,28 @@ fs.mkdirSync(output, {recursive: true});
     await capture('full-console-mobile.png');
     const anonymous = await page.request.post(url + '/api/v1/plugins/extensions/astrbot_plugin_ooptra/ui/action', {data: {action: 'leave'}});
     assert.equal(anonymous.status(), 401);
+    const anonymousConsole = await page.request.get(url + '/api/v1/plugins/extensions/astrbot_plugin_ooptra/ui/console-page');
+    assert.equal(anonymousConsole.status(), 401);
+    await page.request.post(url + '/test/failure', {data: {offline: true}});
+    await page.frames()[1].evaluate(() => location.reload());
+    await frame.locator('#console-load-title').filter({hasText: '无法加载部署中的控制台'}).waitFor();
+    await page.request.post(url + '/test/failure', {data: {offline: false}});
+    await frame.locator('#console-retry').click();
+    await frame.locator('#screen-app').waitFor({state: 'visible'});
+    await page.request.post(url + '/test/deployed', {data: {broken_script: true}});
+    await page.frames()[1].evaluate(() => location.reload());
+    await frame.locator('#console-load-title').filter({hasText: '无法加载部署中的控制台'}).waitFor();
+    await frame.locator('#console-load-detail').filter({hasText: 'incompatible deployed script'}).waitFor();
+    await page.request.post(url + '/test/deployed', {data: {broken_script: false}});
+    await frame.locator('#console-retry').click();
+    await frame.locator('#screen-app').waitFor({state: 'visible'});
+    await page.request.post(url + '/test/deployed', {data: {broken_script: 'domcontentloaded'}});
+    await page.frames()[1].evaluate(() => location.reload());
+    await frame.locator('#console-load-title').filter({hasText: '无法加载部署中的控制台'}).waitFor();
+    await frame.locator('#console-load-detail').filter({hasText: '初始化失败'}).waitFor();
+    await page.request.post(url + '/test/deployed', {data: {broken_script: false}});
+    await frame.locator('#console-retry').click();
+    await frame.locator('#screen-app').waitFor({state: 'visible'});
     assert.deepEqual(errors, [], 'unexpected browser errors');
     fs.writeFileSync(path.join(output, 'browser-result.json'), JSON.stringify({passed: true, errors, checks: ['sandbox bootstrap', 'member unknown state', 'binding add/edit/delete and disk persistence', 'offline binding save', 'voice leave', 'shared cooldown', 'backend switch', 'full console navigation and voice join', 'named log SSE and download', 'save config and reconnect', 'diagnostics and isolated WAV preview', 'saved preview prompts', 'maintenance check, backup and authenticated ZIP download', 'update cancellation and confirmed update/restore', 'configuration and account views', 'light/dark theme', 'mobile layouts', 'anonymous API rejected']}, null, 2));
     console.log('PASS: sandbox UI, binding persistence, voice controls, full console, logs, auth, themes and mobile layouts');
