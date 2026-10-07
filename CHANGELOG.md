@@ -2,6 +2,13 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号尽量符合 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.2.1] - 2026-10-07
+
+### Fixed
+
+- 完整控制台脚本延迟到 AstrBot 在页面底部注入桥接 SDK 后执行，修复从插件工作台进入后显示「连不上控制台后端 / 请从 AstrBot 插件详情打开控制台」的问题
+- 前端同步工具保留正确的初始化顺序；浏览器联调使用 AstrBot 原始 HTML 处理逻辑，覆盖页面底部注入、内部跳转和完整页面刷新
+
 ## [1.2.0] - 2026-10-07
 
 ### Added
@@ -143,7 +150,8 @@
 - QQ 指令：语音状态/进退语音/绑定解绑/自检/帮助
 - LLM 工具与 VOICE_API 客户端、mock、基础单测
 
-[1.2.0]: https://github.com/Eason4869/astrbot_plugin_ooptra/compare/v1.1.0...main
+[1.2.1]: https://github.com/Eason4869/astrbot_plugin_ooptra/compare/b53f9f8...main
+[1.2.0]: https://github.com/Eason4869/astrbot_plugin_ooptra/compare/v1.1.0...b53f9f8
 [1.1.0]: https://github.com/Eason4869/astrbot_plugin_ooptra/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/Eason4869/astrbot_plugin_ooptra/compare/v0.4.0...v1.0.0
 [0.4.0]: https://github.com/Eason4869/astrbot_plugin_ooptra/compare/v0.3.0...v0.4.0

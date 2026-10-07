@@ -29,7 +29,9 @@ def bundle(source: Path) -> None:
     html = html.replace('<script src="/assets/theme.js"></script>', '')
     html = html.replace('href="/assets/style.css"', 'href="./console.css"')
     html = html.replace('src="/assets/', 'src="./').replace('href="/assets/', 'href="./')
-    html = html.replace('<script src="./app.js"></script>', '<script src="./console-adapter.js"></script>\n<script src="./console-app.js"></script>')
+    # AstrBot injects its SDK at the end of body. Deferred scripts run after it,
+    # in document order and before the console's DOMContentLoaded boot handler.
+    html = html.replace('<script src="./app.js"></script>', '<script defer src="./console-adapter.js"></script>\n<script defer src="./console-app.js"></script>')
     html = html.replace('<div class="page-tools" id="page-tools"></div>', '<a class="btn ghost" href="./index.html">返回插件工作台</a>\n        <div class="page-tools" id="page-tools"></div>')
     html = html.replace('</head>', '<link rel="stylesheet" href="./console-extra.css" />\n</head>')
     (target / "full.html").write_text(html, encoding="utf-8", newline="\n")

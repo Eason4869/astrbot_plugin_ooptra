@@ -167,6 +167,10 @@ Ooptra 更新增加新界面功能时，需要同步更新插件的前端快照�
 
 插件列表与工作台统一使用 Ooptra 蓝绿双对话环 LOGO，原紫色耳机标识已弃用。
 
+**旧版完整控制台提示「请从 AstrBot 插件详情打开控制台」时**：更新插件到
+**1.2.1 或更新版本**，重载插件并关闭、重新打开工作台。此修复适配 AstrBot
+在页面底部注入桥接脚本的加载顺序，无需修改 Ooptra 的端口或令牌。
+
 简易工作台顶部显示「**本插件需安装Ooptra方能完美运行**」，附
 [Ooptra GitHub 仓库](https://github.com/Eason4869/Ooptra) 地址。
 在 AstrBot 沙箱内点击该链接会显示地址及复制按钮，便于打开安装说明。
@@ -287,8 +291,9 @@ python tools/webui_preview.py /path/to/AstrBot --port 18765
 node tools/webui_smoke.cjs http://127.0.0.1:18765 /path/to/node_modules/playwright
 ```
 
-AstrBot 源码需包含 `astrbot/api/web.py`、`astrbot/core/utils/upload.py` 和
-`astrbot/dashboard/plugin_page_bridge.js`。测试使用原生页面的 iframe 沙箱限制，
+AstrBot 源码需包含 `astrbot/api/web.py`、`astrbot/core/utils/upload.py`、
+`astrbot/dashboard/plugin_page_bridge.js` 和 `astrbot/dashboard/services/plugin_page_service.py`。
+测试复用实际 HTML 桥接注入逻辑与原生页面的 iframe 沙箱限制，
 覆盖群绑定落盘、离线编辑、语音控制、保存并重连、日志、主题及手机布局；
 证据输出到已忽略的 `.webui-evidence/`。真实部署仍需以自己的 AstrBot / Ooptra 连接验证。
 

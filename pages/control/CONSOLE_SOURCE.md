@@ -11,6 +11,8 @@ interaction code with these explicit compatibility changes:
 - Static asset URLs are relative to this AstrBot view.
 - A return link opens the plugin's voice/group-binding workbench.
 - The central HTTP helper calls `console-adapter.js`, which uses the AstrBot bridge.
+- Console scripts use `defer` so AstrBot's SDK, injected at the end of body,
+  initializes before the adapter and the DOMContentLoaded boot handler.
 - Browser LocalStorage and SessionStorage are replaced with per-page memory.
 - Log events and downloads use the authenticated bridge instead of native
   EventSource or popups. External GitHub links show a selectable address.

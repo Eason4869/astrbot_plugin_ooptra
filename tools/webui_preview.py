@@ -7,13 +7,16 @@ Requires optional dev dependencies: fastapi, hypercorn, httpx.
 from __future__ import annotations
 
 import argparse
+import ast
 import asyncio
 import importlib.util
 import json
+import re
 import sys
 import types
 from copy import deepcopy
 from pathlib import Path
+from urllib.parse import urlencode, urlunsplit
 
 import httpx
 from fastapi import FastAPI, Request
@@ -37,7 +40,24 @@ def load_module(name, path):
     return module
 
 
+def load_page_renderer(source: Path):
+    """Use AstrBot's actual pure HTML processor without loading the bot runtime."""
+    module = ast.parse(source.read_text(encoding="utf-8"))
+    service = next(node for node in module.body if isinstance(node, ast.ClassDef) and node.name == "PluginPageService")
+    names = {"apply_theme_to_html", "get_plugin_page_bridge_sdk_url", "process_plugin_page_html"}
+    methods = [node for node in service.body if isinstance(node, ast.FunctionDef) and node.name in names]
+    if {node.name for node in methods} != names:
+        raise RuntimeError("AstrBot HTML processor changed; update the preview loader.")
+    pattern = next(node for node in module.body if isinstance(node, ast.Assign)
+                   and any(isinstance(target, ast.Name) and target.id == "_HTML_ASSET_ATTR_RE" for target in node.targets))
+    extracted = ast.Module(body=[pattern, ast.ClassDef(name="PluginPageService", bases=[], keywords=[], body=methods, decorator_list=[])], type_ignores=[])
+    namespace = {"re": re, "urlencode": urlencode, "urlunsplit": urlunsplit}
+    exec(compile(ast.fix_missing_locations(extracted), str(source), "exec"), namespace)
+    return namespace["PluginPageService"]()
+
+
 def build_app(astrbot_source: Path):
+    renderer = load_page_renderer(astrbot_source / "astrbot/dashboard/services/plugin_page_service.py")
     main = _main()  # Substitute only AstrBot's non-web plugin runtime.
     for name in ("astrbot.core", "astrbot.core.utils"):
         package = types.ModuleType(name)
@@ -151,7 +171,7 @@ def build_app(astrbot_source: Path):
         with web.bind_request_context(web.PluginRequest(request, username=request.headers.get("X-Test-User"), plugin_name="astrbot_plugin_ooptra")):
             return await handler()
 
-    @app.get("/sdk.js")
+    @app.get("/api/plugin/page/bridge-sdk.js")
     async def sdk():
         return Response((astrbot_source / "astrbot/dashboard/plugin_page_bridge.js").read_text(encoding="utf-8"), media_type="application/javascript", headers={"Access-Control-Allow-Origin": "*"})
 
@@ -164,7 +184,7 @@ def build_app(astrbot_source: Path):
         content = file.read_bytes()
         mime = {".html": "text/html", ".css": "text/css", ".js": "application/javascript", ".svg": "image/svg+xml"}.get(file.suffix, "text/plain")
         if file.suffix == ".html":
-            content = content.replace(b"</head>", b'<script src="/sdk.js"></script></head>')
+            content = renderer.process_plugin_page_html(content.decode("utf-8"), theme="light").encode("utf-8")
         return Response(content, media_type=mime, headers={"Access-Control-Allow-Origin": "*", "Cache-Control": "no-store"})
 
     @app.get("/test/state")

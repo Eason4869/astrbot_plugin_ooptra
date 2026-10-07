@@ -79,6 +79,10 @@ fs.mkdirSync(output, {recursive: true});
     await frame.locator('#full-console').click();
     await frame.locator('#screen-app').waitFor({state: 'visible'});
     await frame.locator('#verdict-title').filter({hasText: '链路正常'}).waitFor();
+    // Refreshing the full document must also initialize against the injected SDK.
+    const fullFrame = page.frames()[1];
+    await Promise.all([fullFrame.waitForNavigation({waitUntil: 'load'}), fullFrame.evaluate(() => location.reload())]);
+    await frame.locator('#verdict-title').filter({hasText: '链路正常'}).waitFor();
     await capture('full-console-desktop.png');
     await frame.locator('button[data-page="logs"]').click();
     await frame.locator('#log-view').filter({hasText: 'AstrBot console bridge connected'}).waitFor();
