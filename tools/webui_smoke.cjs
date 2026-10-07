@@ -89,6 +89,17 @@ fs.mkdirSync(output, {recursive: true});
     await frame.locator('#screen-app').waitFor({state: 'visible'});
     assert.equal(await frame.locator('#deployed-version').textContent(), 'deployment-two', 'refresh must load the deployed version, not a snapshot');
     await frame.locator('#verdict-title').filter({hasText: '链路正常'}).waitFor();
+    await frame.locator('.rail-utilities > summary').click();
+    await frame.locator('#btn-logout').click();
+    await frame.locator('#dialog-yes').click();
+    await frame.locator('#login-title').filter({hasText: '登录控制台'}).waitFor();
+    await frame.locator('#login-token').fill('wrong-password');
+    await frame.locator('#login-submit').click();
+    await frame.locator('#login-msg').filter({hasText: '控制台密码不正确'}).waitFor();
+    await frame.locator('#login-token').fill('preview-server-only-token');
+    await frame.locator('#login-submit').click();
+    await frame.locator('#screen-app').waitFor({state: 'visible'});
+    assert.equal(await frame.locator('#login-token').inputValue(), '');
     // Refreshing the full document must also initialize against the injected SDK.
     const fullFrame = page.frames()[1];
     await Promise.all([fullFrame.waitForNavigation({waitUntil: 'load'}), fullFrame.evaluate(() => location.reload())]);

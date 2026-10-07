@@ -123,6 +123,14 @@ def build_app(astrbot_source: Path):
                 content = content.replace(b"</body>", ('<span id="deployed-version" hidden>' + deployed["version"] + '</span></body>').encode())
             mime = {".html": "text/html", ".css": "text/css", ".js": "text/javascript", ".svg": "image/svg+xml"}[file.suffix]
             return httpx.Response(200, content=content, headers={"Content-Type": mime})
+        elif path == "/api/auth/status":
+            data = {"ok": True, "configured": True, "authenticated": False, "setup_allowed": False}
+        elif path == "/api/auth/login":
+            if body.get("password") != "preview-server-only-token":
+                return httpx.Response(401, json={"ok": False, "error": "控制台密码不正确"})
+            data = {"ok": True}
+        elif path == "/api/auth/logout":
+            data = {"ok": True}
         elif path == "/api/status":
             data = {"ok": True, "process": {"version": "3.0.2", "pid": 302, "python": "3.12", "platform": "preview"},
                 "bridge": {"runtime": {"running": True, "uptime_seconds": 3600},

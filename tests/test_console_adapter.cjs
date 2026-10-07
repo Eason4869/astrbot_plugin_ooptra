@@ -56,6 +56,19 @@ test('full console preferences work without sandbox LocalStorage', () => {
   assert.equal(panel.storage.getItem('area'), null);
 });
 
+test('console logout is per-page and login resumes the backend credential bridge', async () => {
+  const a = adapter();
+  await a.panel.api('/api/auth/logout', {method: 'POST'});
+  assert.equal(a.panel.storage.getItem('oopz.webui.signedout'), '1');
+  assert.equal((await a.panel.api('/api/auth/status')).authenticated, false);
+  await assert.rejects(a.panel.api('/api/status'), /请先登录/);
+  assert.throws(() => new a.panel.EventSource('/api/logs/stream'), /请先登录/);
+  await assert.rejects(a.panel.downloadBackup('a'.repeat(32)), /请先登录/);
+  await a.panel.api('/api/auth/login', {method: 'POST', body: {password: 'test-password'}});
+  assert.equal(a.panel.storage.getItem('oopz.webui.signedout'), null);
+  assert.equal((await a.panel.api('/api/status')).ok, true);
+});
+
 test('failed startup stops API, SSE and authenticated downloads', async () => {
   const a = adapter();
   a.failBoot();

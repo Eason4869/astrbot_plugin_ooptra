@@ -18,6 +18,11 @@ Explicit sandbox adaptations:
 - The central HTTP helper uses `console-adapter.js` and the authenticated bridge.
   Only reviewed HTTP methods and paths in `webui.py` are permitted.
 - LocalStorage and SessionStorage become per-page memory.
+- From 1.2.4, native `/api/auth/status` is translated using an actual protected
+  Bearer probe because the native endpoint reports browser cookies only. Native
+  login/setup validate the entered password before saving the plugin token.
+  Logout blocks this page's API, log and download access while preserving the
+  shared backend credential for plugin operations; reopening verifies it again.
 - Log events and downloads use the bridge; backup IDs are validated and each
   buffered backup is limited to 128 MiB.
 - Static URLs become data URLs; the browser needs no network access to Ooptra.
@@ -42,6 +47,14 @@ The 1.2.3 browser checks use the Ooptra 3.2.0 frontend at commit
 `254cc95` and AstrBot's actual SDK/HTML processor; they cover refresh after a
 deployment change, startup errors and offline retry. They do not certify a
 production upgrade, real credentials or model audio.
+
+The 1.2.4 checks use the updated 3.2.0 frontend at commit `9a8522d`, including
+native session authentication. All 160 Python and 10 Node regression tests pass.
+Browser checks use AstrBot's actual SDK/HTML processor and a mocked Ooptra API,
+covering logout, incorrect password and login. A separate isolated HTTP check
+uses Ooptra's unchanged native auth module and middleware, exercising wrong
+credentials, UTF-8 Bearer passwords, first setup and logout independence. These
+checks do not connect to the user's production deployment.
 
 The quick workbench remains bundled. Its base stylesheet `workbench-base.css`,
 unchanged `logo.svg` and `favicon.svg`

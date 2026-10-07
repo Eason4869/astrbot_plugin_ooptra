@@ -24,12 +24,25 @@
     const parsed = parse(path);
     // Ooptra's token is attached by the plugin backend, never by the browser.
     delete parsed.params.token;
-    return bridge.apiPost('ui/console', {...parsed, method: opts.method || 'GET', body: opts.body || {}});
+    const authPath = parsed.path.startsWith('/api/auth/');
+    if (!authPath) ensureSignedIn();
+    const result = await bridge.apiPost('ui/console', {...parsed, method: opts.method || 'GET', body: opts.body || {}});
+    if (parsed.path === '/api/auth/status' && values.get('oopz.webui.signedout') === '1') {
+      return {...result, authenticated: false};
+    }
+    if (parsed.path === '/api/auth/logout') values.set('oopz.webui.signedout', '1');
+    if (['/api/auth/login', '/api/auth/setup'].includes(parsed.path)) values.delete('oopz.webui.signedout');
+    return result;
+  }
+
+  function ensureSignedIn() {
+    if (values.get('oopz.webui.signedout') === '1') throw new Error('请先登录完整控制台。');
   }
 
   class LogSource {
     constructor(path) {
       ensureRunning();
+      ensureSignedIn();
       this.listeners = new Map();
       this.closed = false;
       this.subscription = null;
@@ -43,6 +56,7 @@
         await ready;
         if (this.closed) return;
         ensureRunning();
+        ensureSignedIn();
         const id = await bridge.subscribeSSE('ui/logs', {
           onMessage: event => {
             if (this.closed) return;
@@ -83,6 +97,7 @@
     if (path.startsWith('/api/logs/tail')) {
       await ready;
       ensureRunning();
+      ensureSignedIn();
       return bridge.download('ui/logs-download', parse(path).params, 'ooptra-logs.txt');
     }
     // External project links have no navigation privilege in the view sandbox.
@@ -116,6 +131,7 @@
     if (!/^[a-f0-9]{32}$/.test(id)) throw new Error('备份 ID 无效。');
     await ready;
     ensureRunning();
+    ensureSignedIn();
     return bridge.download('ui/backup-download', {id}, `ooptra-${id}.zip`);
   }
 

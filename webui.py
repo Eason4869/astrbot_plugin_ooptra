@@ -17,11 +17,12 @@ from .ooptra_client import (
 
 # Deployed frontend code still calls only reviewed routes on the configured instance.
 CONSOLE_ROUTES = {
-    "GET": {"/api/status", "/api/credentials", "/api/update", "/api/logs", "/api/logs/tail",
+    "GET": {"/api/auth/status", "/api/status", "/api/credentials", "/api/update", "/api/logs", "/api/logs/tail",
             "/api/config", "/api/login/browser", "/api/voice/status", "/api/voice/members",
             "/api/oopz/areas", "/api/oopz/channels", "/api/persona", "/api/memory", "/api/voice/auto-visit",
             "/api/voice/preview/prompts", "/api/maintenance", "/api/maintenance/preflight", "/api/maintenance/storage"},
-    "POST": {"/api/config", "/api/login/browser", "/api/login/browser/cancel", "/api/login/api",
+    "POST": {"/api/auth/login", "/api/auth/setup", "/api/auth/logout",
+             "/api/config", "/api/login/browser", "/api/login/browser/cancel", "/api/login/api",
              "/api/bridge/restart", "/api/voice/join", "/api/voice/leave", "/api/voice/speak",
              "/api/voice/auto-visit/config", "/api/voice/auto-visit/pause", "/api/voice/auto-visit/resume",
              "/api/voice/diagnostics", "/api/voice/preview", "/api/maintenance/check",
@@ -194,6 +195,59 @@ class ControlPanel:
         self.ensure_active()
         return result
 
+    async def console_auth_status(self) -> dict:
+        # Native auth/status checks a browser cookie; the plugin uses Bearer auth.
+        client = self.plugin.client
+        auth = _confirmed(await client._request("GET", "/api/auth/status"))
+        if not isinstance(auth.get("configured"), bool):
+            raise OoptraError("Ooptra 登录状态响应不完整。")
+        authenticated = False
+        if auth["configured"]:
+            try:
+                _confirmed(await client._request("GET", "/api/status"))
+                authenticated = True
+            except OoptraError as exc:
+                if exc.status_code != 401:
+                    raise
+        self.ensure_active()
+        return {"ok": True, "configured": auth["configured"], "authenticated": authenticated,
+                "setup_allowed": auth.get("setup_allowed") is True}
+
+    async def console_login(self, path: str, payload: dict) -> dict:
+        password = payload.get("password")
+        if not isinstance(password, str) or not password.strip() or len(password) > 1024:
+            raise ValueError("请填写有效的控制台密码（最多 1024 字符）。")
+        password = password.strip()
+        if any(ord(char) < 32 or ord(char) == 127 for char in password):
+            raise ValueError("控制台密码不能包含控制字符。")
+        async with self.plugin._map_lock:
+            self.ensure_active()
+            client = self.plugin.client
+            try:
+                _confirmed(await client._request("POST", path, json_body={"password": password}))
+            except OoptraError as exc:
+                if exc.status_code == 401:
+                    raise OoptraError("控制台密码不正确。", status_code=401) from None
+                raise
+            self.ensure_active()
+            config = self.plugin.config
+            existed, previous = "api_token" in config, config.get("api_token")
+            config["api_token"] = password
+            try:
+                config.save_config()
+            except Exception:
+                if existed:
+                    config["api_token"] = previous
+                else:
+                    config.pop("api_token", None)
+                message = "控制台密码已验证，但插件配置保存失败，请检查配置文件权限后重试。"
+                if path == "/api/auth/setup":
+                    message = "Ooptra 密码已设置，但插件配置保存失败。请检查配置文件权限，重新打开控制台并使用同一密码登录。"
+                raise OoptraError(message) from None
+            # Keep the validated client and transport; never expose session cookies.
+            client.token = password
+            return {"ok": True}
+
     async def console(self, value: Any) -> dict:
         self.ensure_active()
         body = _object(value)
@@ -209,6 +263,10 @@ class ControlPanel:
                                   for key, item in params.items()):
             raise ValueError("不支持的控制台查询参数。")
         payload = _object(body.get("body", {})) if method != "GET" else None
+        if path == "/api/auth/status":
+            return await self.console_auth_status()
+        if path in {"/api/auth/login", "/api/auth/setup"}:
+            return await self.console_login(path, payload)
         if path in {"/api/voice/join", "/api/voice/leave"}:
             action = {**(payload or {}), "action": path.rsplit("/", 1)[1]}
             if action["action"] == "join" and (not action.get("area") or not action.get("channel")):

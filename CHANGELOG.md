@@ -2,6 +2,16 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号尽量符合 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.2.4] - 2026-10-07
+
+### Fixed
+
+- 适配 Ooptra 新版 `/api/auth/status`、登录、首次设置和退出接口，修复更新 Ooptra 后完整控制台显示「不支持的控制台接口」的问题
+- 将原生 Cookie 登录状态转换为插件后端实际 Bearer 认证结果；错误令牌显示登录入口，连接失败仍明确报错
+- 登录或首次设置经 Ooptra 验证后保存插件 `api_token`，支持中文密码；配置保存失败回滚，并提示首次设置成功后的恢复步骤
+- 退出仅结束当前内部页面的控制台访问，暂停接口、日志订阅与下载，不撤销插件常用操作所需的共享凭据
+- 补充认证回归测试及新版前端在 AstrBot 沙箱内的退出、错误密码和重新登录验证
+
 ## [1.2.3] - 2026-10-07
 
 ### Changed
@@ -171,6 +181,7 @@
 - QQ 指令：语音状态/进退语音/绑定解绑/自检/帮助
 - LLM 工具与 VOICE_API 客户端、mock、基础单测
 
+[1.2.4]: https://github.com/Eason4869/astrbot_plugin_ooptra/compare/v1.2.3...v1.2.4
 [1.2.3]: https://github.com/Eason4869/astrbot_plugin_ooptra/compare/v1.2.2...v1.2.3
 [1.2.2]: https://github.com/Eason4869/astrbot_plugin_ooptra/compare/152af42...v1.2.2
 [1.2.1]: https://github.com/Eason4869/astrbot_plugin_ooptra/compare/b53f9f8...152af42

@@ -81,10 +81,11 @@ class OoptraClient:
         self.timeout = timeout if timeout > 0 else 8.0
         self._transport = transport
 
-    def _headers(self) -> dict[str, str]:
-        headers = {"Accept": "application/json"}
+    def _headers(self) -> dict[str, str | bytes]:
+        headers: dict[str, str | bytes] = {"Accept": "application/json"}
         if self.token:
-            headers["Authorization"] = f"Bearer {self.token}"
+            # Ooptra compares UTF-8 credentials; HTTPX encodes str headers as ASCII.
+            headers["Authorization"] = f"Bearer {self.token}".encode("utf-8")
         return headers
 
     async def _request(
