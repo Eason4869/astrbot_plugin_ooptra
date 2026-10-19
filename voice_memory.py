@@ -38,21 +38,22 @@ def voice_event(scope: dict, payload: dict, event_id: str):
         async def send(self, message):
             raise MemoryUnavailable("语音来源事件不能向 QQ 群发送消息")
 
-    sender = payload.get("qq_user_id") or "oopz:" + (payload.get("speaker") or "mixed")
+    private = scope.get("message_type") == "FriendMessage"
+    sender = (scope.get("target_user_id") if private else None) or payload.get("qq_user_id") or "oopz:" + (payload.get("speaker") or "mixed")
     text = str(payload.get("user_text") or payload.get("query") or payload.get("content") or "")
     msg = AstrBotMessage()
-    msg.type = MessageType.GROUP_MESSAGE
+    msg.type = MessageType.FRIEND_MESSAGE if private else MessageType.GROUP_MESSAGE
     msg.self_id = scope.get("bot_id", "")
     msg.group_id = scope["group_id"]
-    msg.session_id = scope["group_id"]
+    msg.session_id = scope.get("session_id", scope["group_id"])
     msg.sender = MessageMember(user_id=sender, nickname=sender)
     msg.message_id = "ooptra:" + event_id
     msg.message = [Plain(text=text)]
     msg.message_str = text
     msg.raw_message = {"source": "ooptra_voice", "oopz_user_id": payload.get("speaker", "")}
     event = VoiceSourceEvent(text, msg, PlatformMetadata(
-        name="aiocqhttp", description="Ooptra voice source", id=scope["platform_id"]),
-        scope["group_id"])
+        name=scope.get("platform_name", "aiocqhttp"), description="Ooptra voice source", id=scope["platform_id"]),
+        scope.get("session_id", scope["group_id"]))
     event.unified_msg_origin = scope["umo"]
     event.set_extra("_trace_persona_id", scope.get("memory_persona_id", scope.get("persona_id")))
     event.set_extra("ooptra_voice_source", True)
@@ -81,9 +82,11 @@ class CompanionMemory:
         if callable(probe) and probe().get("bridge_gate"):
             raise MemoryUnavailable("Memory Companion 已启用授权校验，当前语音桥接尚未获授权")
         # Empty reader identity and strict group session prevent private-person recall.
-        ctx = {"session_id": scope["umo"], "scope": "group", "platform": "aiocqhttp",
+        private = scope.get("message_type") == "FriendMessage"
+        ctx = {"session_id": scope["umo"], "scope": "private" if private else "group", "platform": scope.get("platform_name", "aiocqhttp"),
                "group_id": scope["group_id"], "bot_id": scope.get("bot_id", ""),
-               "persona_id": scope.get("memory_persona_id", scope.get("persona_id", "")), "user_id": "",
+               "persona_id": scope.get("memory_persona_id", scope.get("persona_id", "")),
+               "user_id": scope.get("target_user_id", "") if private else "",
                "strict_session_only": True}
         text = await self.bridge.compose_context(query=payload["query"], session_context=ctx,
                                                   top_k=5, max_chars=2500)
@@ -101,13 +104,14 @@ class CompanionMemory:
             if not payload.get(key) or stage(role):
                 continue
             result = await self.bridge.record_visible_turn(
-                role=role, content=payload[key], scope="group", session_id=scope["umo"],
-                platform="aiocqhttp", user_id=payload.get("qq_user_id") or
+                role=role, content=payload[key], scope="private" if scope.get("message_type") == "FriendMessage" else "group", session_id=scope["umo"],
+                platform=scope.get("platform_name", "aiocqhttp"), user_id=scope.get("target_user_id") or payload.get("qq_user_id") or
                 "oopz:" + (payload.get("speaker") or "mixed"),
                 group_id=scope["group_id"], message_id=f"ooptra:{event_id}:{role}",
                 source="ooptra_voice", metadata={"bot_id": scope.get("bot_id", ""),
                     "persona_id": scope.get("memory_persona_id", scope.get("persona_id", "")),
                     "interrupted": payload.get("interrupted", False),
+                    "oopz_speaker": payload.get("speaker", ""),
                     "delivery": "submitted" if role == "assistant" else "observed"})
             if not result:
                 raise MemoryUnavailable("Memory Companion 未接收语音记录，可能已关闭该群采集")

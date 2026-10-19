@@ -6,6 +6,7 @@ import asyncio
 import json
 import unittest
 from copy import deepcopy
+from types import SimpleNamespace
 
 import httpx
 from test_main_logic import _plugin
@@ -14,12 +15,36 @@ from ooptra_client import OoptraClient, OoptraError
 
 
 class TestControlPanel(unittest.IsolatedAsyncioTestCase):
-    async def test_overlapping_room_bindings_are_rejected_before_persistence(self):
+    async def test_source_persistence_does_not_change_controls_and_delete_disables_legacy(self):
+        self.config["group_map"] = {"qq:GroupMessage:123": {"area": "AREA-A"}, "qq:GroupMessage:456": {"area": "AREA-A"}}
+        before = deepcopy(self.config["group_map"])
+        self.plugin.context = SimpleNamespace(platform_manager=SimpleNamespace(get_insts=lambda: [SimpleNamespace(meta=lambda: SimpleNamespace(id="qq", name="aiocqhttp"))]))
+        await self.panel.sources({"action": "source-save", "area": "AREA-A", "channel": "",
+            "persona_umo": "qq:GroupMessage:123", "memory_umos": ["qq:GroupMessage:123", "qq:GroupMessage:456"]})
+        self.assertEqual(self.config["context_sources"]["rules"][0]["memory_umos"], ["qq:GroupMessage:123", "qq:GroupMessage:456"])
+        self.assertEqual(self.config["group_map"], before)
+        await self.panel.sources({"action": "source-delete", "area": "AREA-A", "channel": ""})
+        self.assertEqual(self.config["context_sources"], {"rules": []})
+
+    async def test_source_config_rollback_and_invalid_session_never_persist(self):
+        body = {"action": "source-save", "area": "AREA-A", "persona_umo": "qq:GroupMessage:123"}
+        with self.assertRaisesRegex(ValueError, "未映射"):
+            await self.panel.sources(body)
+        self.assertNotIn("context_sources", self.config)
+        self.plugin.context = SimpleNamespace(platform_manager=SimpleNamespace(get_insts=lambda: [SimpleNamespace(meta=lambda: SimpleNamespace(id="qq", name="aiocqhttp"))]))
+        self.config["group_map"] = {"qq:GroupMessage:123": {"area": "AREA-A"}}
+        def fail():
+            raise OSError("disk full")
+        self.config.save_config = fail
+        with self.assertRaises(OSError):
+            await self.panel.sources(body)
+        self.assertNotIn("context_sources", self.config)
+
+    async def test_multiple_control_groups_may_share_one_room(self):
         self.config["group_map"] = {"123": {"area": "AREA-A", "channel": ""}}
-        with self.assertRaisesRegex(ValueError, "冲突"):
-            await self.panel.save_binding({"group_id": "456", "areas": ["AREA-A"],
-                "channel": "CHANNEL-A", "label": "other"})
-        self.assertNotIn("456", self.config["group_map"])
+        await self.panel.save_binding({"group_id": "456", "areas": ["AREA-A"],
+            "channel": "CHANNEL-A", "label": "other"})
+        self.assertIn("456", self.config["group_map"])
 
     def setUp(self):
         self.plugin, self.config = _plugin(api_token="server-only-secret")
@@ -58,7 +83,7 @@ class TestControlPanel(unittest.IsolatedAsyncioTestCase):
         self.config["group_map"] = {"123456": {"areas": ["AREA-A", "AREA-B"], "channel": "", "extra": "keep"},
                                      "654321": "AREA-C:CHANNEL-C"}
         await self.panel.save_binding({"group_id": "123456", "areas": ["AREA-A", "AREA-B"], "channel": "CHANNEL-A", "label": "新备注"})
-        self.assertEqual(self.config["group_map"]["123456"], {"areas": ["AREA-A", "AREA-B"], "channel": "CHANNEL-A", "label": "新备注", "extra": "keep"})
+        self.assertEqual(self.config["group_map"]["123456"], {"areas": ["AREA-A", "AREA-B"], "channel": "CHANNEL-A", "label": "新备注", "extra": "keep", "allow_control": True})
         self.assertEqual(self.config["group_map"]["654321"], "AREA-C:CHANNEL-C")
         self.assertEqual(self.config.saved, 1)
 

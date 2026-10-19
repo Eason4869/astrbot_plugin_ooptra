@@ -1,3 +1,4 @@
+import './session-manager.js';
 'use strict';
 
 const bridge = window.AstrBotPluginView || window.AstrBotPluginPage;
@@ -50,36 +51,17 @@ function setOptions(select, rows, placeholder) {
   rows.forEach(row => select.add(new Option(row.name || row.id, row.id)));
   if (rows.some(row => row.id === previous)) select.value = previous;
 }
+let sessionManager = null;
 function renderBindings() {
-  $('binding-count').textContent = String(state.bindings.length);
-  const search = $('binding-search').value.trim().toLowerCase();
-  const rows = state.bindings.filter(row => [row.group_id, row.label, ...row.areas, row.channel].join(' ').toLowerCase().includes(search));
-  const host = $('bindings');
-  host.replaceChildren();
-  if (!rows.length) return empty(host, search ? '没有匹配的群绑定。' : '还没有群绑定，点击“添加群绑定”开始。', 4);
-  rows.forEach(row => {
-    const tr = element('tr');
-    const group = element('td');
-    group.append(element('b', row.group_id));
-    if (row.label) group.append(element('span', row.label, 'row-label'));
-    const area = element('td');
-    row.areas.forEach(id => area.append(element('div', state.areas.find(a => a.id === id)?.name || id)));
-    if (!row.areas.length) area.textContent = '未配置域，请编辑修复';
-    const actions = element('td');
-    const edit = element('button', '编辑', 'btn ghost sm');
-    edit.type = 'button';
-    edit.setAttribute('aria-label', `编辑群 ${row.group_id}`);
-    edit.addEventListener('click', () => editBinding(row));
-    const remove = element('button', '移除', 'btn subtle sm');
-    remove.type = 'button';
-    remove.setAttribute('aria-label', `移除群 ${row.group_id}`);
-    remove.addEventListener('click', () => removeBinding(row));
-    actions.append(edit, remove);
-    tr.append(group, area, element('td', row.channel || '使用域内默认频道'), actions);
-    host.append(tr);
+  if (!sessionManager) sessionManager = window.OoptraSessionManager.mount($('session-manager'), {
+    rpc: body => body.action === 'list' ? bridge.apiGet('ui/bootstrap') : bridge.apiPost(
+      body.action === 'save' ? 'ui/binding' : body.action === 'delete' ? 'ui/unbind' : 'ui/sources', body),
+    channels: area => bridge.apiGet('ui/channels', {area}), onChange: applyBootstrap,
   });
+  sessionManager.update(state.bootstrap || {}, state.areas);
 }
 function applyBootstrap(data) {
+  state.bootstrap = data;
   state.bindings = data.bindings;
   state.allowJoin = data.allow_join;
   renderContext(data.context_sync || {});
@@ -89,8 +71,7 @@ function applyBootstrap(data) {
 }
 function renderContext(data) {
   state.context = data;
-  setOptions($('context-persona'), data.personas || [], '跟随绑定 QQ 群当前人格');
-  setOptions($('binding-persona'), data.personas || [], '使用默认同步规则');
+  setOptions($('context-persona'), data.personas || [], '跟随旧绑定会话人格');
   $('context-enabled').value = String(data.enabled === true);
   if (data.persona_id && !Array.from($('context-persona').options).some(o => o.value === data.persona_id)) {
     $('context-persona').add(new Option(`已不可用：${data.persona_id}`, data.persona_id));
@@ -130,8 +111,8 @@ async function loadAreas() {
     feedback(`域列表读取失败：${error.message}\n可以从群绑定选择，或手动填写域 ID。`, 'warn');
   }
   setOptions($('area-select'), state.areas, '选择一个 Oopz 域');
-  setOptions($('binding-area-choice'), state.areas, '从域列表添加…');
   renderBindings();
+  await sessionManager.loadChannels();
 }
 async function refreshStatus() {
   if (refreshing) return;
@@ -142,7 +123,7 @@ async function refreshStatus() {
     const context = data.astrbot_context;
     if (context) {
       $('context-chip').textContent = context.active ? '已接入' : (context.state === 'offline' ? '桥接未连接' : '使用本地设置');
-      $('context-detail').textContent = [context.group_id ? `QQ 群 ${context.group_id}` : '尚未确定绑定来源', context.persona_id ? `人格 ${context.persona_id}` : '', context.provider ? `记忆 ${context.provider}` : '未接入记忆', `待写入 ${context.pending_writes || 0} 条`, context.error || ''].filter(Boolean).join(' · ');
+      $('context-detail').textContent = [context.persona_umo || (context.group_id ? `旧群 ${context.group_id}` : '尚未确定会话来源'), context.persona_id ? `人格 ${context.persona_id}` : '', context.provider ? `记忆 ${context.provider} · ${(context.memory_umos || []).length} 个读写会话` : '未接入记忆', `待写入 ${context.pending_writes || 0} 条`, context.error || ''].filter(Boolean).join(' · ');
     }
     const backendChanged = state.status?.backend !== data.backend;
     state.status = data;
@@ -267,8 +248,8 @@ function navigate(view) {
   const bindings = view === 'bindings';
   $('view-voice').hidden = bindings;
   $('view-bindings').hidden = !bindings;
-  $('page-title').textContent = bindings ? '群绑定' : '语音台';
-  $('page-sub').textContent = bindings ? '让 QQ 群的语音命令找到正确的 Oopz 域与频道' : '查看房间、控制语音与切换对话方案';
+  $('page-title').textContent = bindings ? '会话对应' : '语音台';
+  $('page-sub').textContent = bindings ? '多个完整 UMO 可映射到同一范围，人格单选，记忆多选并写回' : '查看房间、控制语音与切换对话方案';
   document.querySelectorAll('[data-view]').forEach(button => {
     const active = button.dataset.view === (bindings ? 'bindings' : 'voice');
     button.classList.toggle('is-active', active);
@@ -276,44 +257,6 @@ function navigate(view) {
     else button.removeAttribute('aria-current');
   });
   location.hash = bindings ? 'bindings' : 'voice';
-}
-function editBinding(row = null) {
-  $('binding-title').textContent = row ? '编辑群绑定' : '添加群绑定';
-  $('binding-group').value = row?.group_id || '';
-  $('binding-group').readOnly = Boolean(row);
-  $('binding-areas').value = row?.areas.join('\n') || '';
-  $('binding-channel').value = row?.channel || '';
-  $('binding-label').value = row?.label || '';
-  $('binding-persona').value = row?.persona_id || '';
-  $('binding-platform').value = row?.platform_id || '';
-  $('binding-error').hidden = true;
-  $('binding-dialog').showModal();
-  (row ? $('binding-areas') : $('binding-group')).focus();
-}
-async function saveBinding(event) {
-  event.preventDefault();
-  if ($('save-binding').disabled) return;
-  $('save-binding').disabled = true;
-  $('binding-error').hidden = true;
-  try {
-    const result = await bridge.apiPost('ui/binding', {group_id: $('binding-group').value.trim(),
-      areas: $('binding-areas').value.split(/[\s,、]+/u).filter(Boolean), channel: $('binding-channel').value.trim(), label: $('binding-label').value.trim(), persona_id: $('binding-persona').value, platform_id: $('binding-platform').value.trim()});
-    applyBootstrap(result);
-    $('binding-dialog').close();
-    feedback(result.message);
-  } catch (error) { $('binding-error').textContent = error.message; $('binding-error').hidden = false; }
-  finally { $('save-binding').disabled = false; }
-}
-function removeBinding(row) {
-  $('confirm-text').textContent = `移除群 ${row.group_id}${row.label ? '（' + row.label + '）' : ''} 的绑定？该群的语音命令将无法再使用这个映射。`;
-  const dialog = $('confirm-dialog');
-  dialog.returnValue = 'cancel';
-  dialog.addEventListener('close', async () => {
-    if (dialog.returnValue !== 'confirm') return;
-    try { const result = await bridge.apiPost('ui/unbind', {group_id: row.group_id}); applyBootstrap(result); feedback(result.message); }
-    catch (error) {feedback(error.message, 'err');}
-  }, {once: true});
-  dialog.showModal();
 }
 async function start() {
   $('ooptra-project').addEventListener('click', event => {
@@ -337,15 +280,6 @@ async function start() {
   document.querySelectorAll('[data-view]').forEach(button => button.addEventListener('click', () => navigate(button.dataset.view)));
   window.addEventListener('hashchange', () => navigate(location.hash.slice(1)));
   navigate(location.hash.slice(1));
-  $('binding-search').addEventListener('input', renderBindings);
-  $('add-binding').addEventListener('click', () => editBinding());
-  $('binding-form').addEventListener('submit', saveBinding);
-  ['close-binding', 'cancel-binding'].forEach(id => $(id).addEventListener('click', () => $('binding-dialog').close()));
-  $('add-binding-area').addEventListener('click', () => {
-    const area = $('binding-area-choice').value;
-    const areas = $('binding-areas').value.split(/[\s,、]+/u).filter(Boolean);
-    if (area && !areas.includes(area)) $('binding-areas').value = [...areas, area].join('\n');
-  });
   $('area-select').addEventListener('change', () => { $('group-preset').value = ''; selectArea($('area-select').value); });
   $('group-preset').addEventListener('change', () => {
     const row = state.bindings.find(binding => binding.group_id === $('group-preset').value);

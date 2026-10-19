@@ -44,6 +44,19 @@ class MemoryAdapterTests(unittest.IsolatedAsyncioTestCase):
             await adapter.recall(SCOPE, {"query": "secret"}, "turn")
         adapter.bridge.compose_context.assert_not_awaited()
 
+    async def test_private_companion_reads_and_records_the_selected_private_scope(self):
+        adapter = self.companion()
+        scope = {**SCOPE, "umo": "qq:FriendMessage:456", "message_type": "FriendMessage",
+                 "target_user_id": "456", "group_id": "", "session_id": "456"}
+        await adapter.recall(scope, {"query": "fact"}, "turn")
+        ctx = adapter.bridge.compose_context.call_args.kwargs["session_context"]
+        self.assertEqual(ctx["user_id"], "456")
+        self.assertEqual(ctx["session_id"], scope["umo"])
+        await adapter.ingest(scope, {"user_text": "question", "speaker": "oopz-user"}, "private", lambda *args: False)
+        call = adapter.bridge.record_visible_turn.call_args.kwargs
+        self.assertEqual(call["scope"], "private")
+        self.assertEqual(call["user_id"], "456")
+
     async def test_companion_checkpoints_roles_and_keeps_unknown_user_namespace(self):
         adapter = self.companion()
         done = set()

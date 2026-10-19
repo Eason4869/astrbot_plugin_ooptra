@@ -36,8 +36,8 @@ from .ooptra_client import (
     normalize_backend,
     resolve_channel,
     resolve_group_mapping,
-    validate_binding_overlap,
 )
+from .session_sources import legacy_alias
 from .web_routes import register_panel, unregister_panel
 from .webui import ControlPanel
 
@@ -112,12 +112,25 @@ class OoptraPlugin(Star):
     def _group_id(self, event: AstrMessageEvent) -> str:
         return str(getattr(event.message_obj, "group_id", "") or "").strip()
 
+    def _legacy_group_id(self, event: AstrMessageEvent) -> str:
+        group = self._group_id(event)
+        mappings = self.config.get("group_map") or {}
+        old = mappings.get(group, mappings.get(legacy_alias(group))) if group else None
+        platform = (old.get("platform_id") if isinstance(old, dict) else "") or self.config.get("context_platform_id")
+        umo = getattr(event, "unified_msg_origin", "")
+        return "" if platform and umo and umo.split(":", 1)[0] != platform else group
+
     def _mapping(self, event: AstrMessageEvent, *, preferred_area: str = "") -> dict[str, Any] | None:
-        return resolve_group_mapping(
+        umo = getattr(event, "unified_msg_origin", "")
+        explicit = resolve_group_mapping(self.config.get("group_map") or {}, umo, preferred_area=preferred_area) if umo else None
+        if explicit is not None:
+            return explicit if explicit.get("allow_control", True) else None
+        result = resolve_group_mapping(
             self.config.get("group_map") or {},
-            self._group_id(event),
+            self._legacy_group_id(event),
             preferred_area=preferred_area,
         )
+        return result if result is None or result.get("allow_control", True) else None
 
     async def _ooptra_defaults(self) -> dict[str, str]:
         """读取 Ooptra 侧默认域/默认频道（WebUI「设为默认」写入）。"""
@@ -252,7 +265,9 @@ class OoptraPlugin(Star):
         label: str = "",
     ):
         """绑定当前 QQ 群到 Oopz 域/频道。用法：/语音绑定 域ID [频道ID] [备注]"""
-        group_id = self._group_id(event)
+        group_id = getattr(event, "unified_msg_origin", "") or self._group_id(event)
+        if callable(getattr(event, "get_platform_name", None)):
+            self.context_sync.observe(event)
         if not group_id:
             yield event.plain_result("请在 QQ 群内使用该指令。")
             return
@@ -280,12 +295,15 @@ class OoptraPlugin(Star):
             return
 
         def mutate(group_map: dict[str, Any]) -> None:
-            validate_binding_overlap(group_map, str(group_id), [area], channel)
-            previous = group_map.get(str(group_id), group_map.get(int(group_id)))
+            legacy = self._legacy_group_id(event)
+            previous = group_map.get(str(group_id), group_map.get(legacy, group_map.get(legacy_alias(legacy))))
             row = dict(previous) if isinstance(previous, dict) else {}
             row.pop("areas", None)
             row.update(area=area, channel=channel, label=label)
-            group_map.pop(int(group_id), None)
+            group_map.pop(legacy_alias(str(group_id)), None)
+            if legacy:
+                group_map.pop(legacy, None)
+                group_map.pop(legacy_alias(legacy), None)
             group_map[str(group_id)] = row
 
         try:
@@ -303,17 +321,18 @@ class OoptraPlugin(Star):
     @filter.permission_type(filter.PermissionType.ADMIN)
     async def voice_unbind(self, event: AstrMessageEvent):
         """解绑当前 QQ 群的 Oopz 语音映射。"""
-        group_id = self._group_id(event)
+        group_id = getattr(event, "unified_msg_origin", "") or self._group_id(event)
         if not group_id:
             yield event.plain_result("请在 QQ 群内使用该指令。")
             return
 
         def mutate(group_map: dict[str, Any]) -> None:
+            legacy = self._legacy_group_id(event)
             group_map.pop(str(group_id), None)
-            try:
-                group_map.pop(int(group_id), None)  # type: ignore[arg-type]
-            except Exception:
-                pass
+            group_map.pop(legacy_alias(str(group_id)), None)
+            if legacy:
+                group_map.pop(legacy, None)
+                group_map.pop(legacy_alias(legacy), None)
 
         try:
             await self._mutate_group_map(mutate)

@@ -13,8 +13,8 @@ from .ooptra_client import (
     looks_like_id,
     normalize_backend,
     resolve_group_mapping,
-    validate_binding_overlap,
 )
+from .session_sources import binding_key, legacy_alias, parse_umo
 
 # Deployed frontend code still calls only reviewed routes on the configured instance.
 CONSOLE_ROUTES = {
@@ -51,12 +51,6 @@ def _id(value: Any, label: str, *, optional: bool = False) -> str:
     return result
 
 
-def _group(value: Any) -> str:
-    if not isinstance(value, str) or not re.fullmatch(r"[1-9][0-9]{0,19}", value.strip()):
-        raise ValueError("请填写有效的 QQ 群号。")
-    return value.strip()
-
-
 def _confirmed(result: dict) -> dict:
     if not isinstance(result, dict):
         raise OoptraError("Ooptra 返回了无法识别的响应。")
@@ -85,10 +79,78 @@ class ControlPanel:
             row = resolve_group_mapping(mappings, str(key))
             value = mappings.get(key, mappings.get(int(key) if key.isdigit() else key))
             raw = value if isinstance(value, dict) else {}
-            bindings.append({"group_id": str(key), **(row or {"area": "", "areas": [], "channel": "", "label": ""}),
-                             "persona_id": raw.get("persona_id", ""), "platform_id": raw.get("platform_id", "")})
+            try:
+                umo = parse_umo(key)["umo"] if ":" in key else self.plugin.context_sync._source(key)["umo"]
+            except ValueError:
+                umo = ""
+            bindings.append({"group_id": str(key), "umo": umo, **(row or {"area": "", "areas": [], "channel": "", "label": ""}),
+                             "persona_id": raw.get("persona_id", ""), "platform_id": raw.get("platform_id", ""),
+                             "allow_control": raw.get("allow_control", True), "kind": raw.get("kind", "session")})
+        source_settings = config.get("context_sources") or {}
         return {"bindings": bindings, "allow_join": bool(config.get("allow_join", True)),
+                "source_management": True,
+                "context_sources": source_settings,
+                "platforms": self.plugin.context_sync.platforms(),
+                "known_sessions": list((self.plugin.context_sync.state.get("sessions") or {}).values()),
                 "context_sync": self.plugin.context_sync.describe()}
+
+    async def sources(self, value: Any) -> dict:
+        self.ensure_active()
+        body = _object(value)
+        action = body.get("action")
+        if action == "source-options":
+            return await self.plugin.context_sync.source_options(
+                str(body.get("platform_id") or ""), body.get("kind"), str(body.get("text_area") or ""))
+        area = _id(body.get("area"), "语音域 ID")
+        channel = _id(body.get("channel", ""), "语音频道 ID", optional=True)
+        if action not in {"source-save", "source-delete"}:
+            raise ValueError("不支持的来源设置操作")
+        row = None
+        if action == "source-save":
+            if channel:
+                await self._verify_channel(area, channel)
+            persona_umo = parse_umo(body.get("persona_umo"))["umo"]
+            memories = body.get("memory_umos", [])
+            if not isinstance(memories, list) or len(memories) > 8:
+                raise ValueError("记忆来源最多选择 8 个会话")
+            memories = [parse_umo(umo)["umo"] for umo in memories]
+            if len(set(memories)) != len(memories):
+                raise ValueError("记忆会话不能重复")
+            available = {item["umo"] for item in self.plugin.context_sync.available_sources(area, channel)}
+            if any(umo not in available for umo in [persona_umo, *memories]):
+                raise ValueError("所选 UMO 未映射到这个语音范围，请先添加会话映射")
+            private = any(parse_umo(umo)["message_type"] == "FriendMessage" for umo in [persona_umo, *memories])
+            if private and body.get("allow_private") is not True:
+                raise ValueError("请确认所选私聊上下文可用于公共语音，并允许语音记忆写回该私聊")
+            persona = body.get("persona_id", "")
+            if not isinstance(persona, str) or len(persona) > 160:
+                raise ValueError("人格 ID 格式不正确")
+            row = {"area": area, "channel": channel, "persona_umo": persona_umo,
+                   "memory_umos": memories, "persona_id": persona, "allow_private": bool(private)}
+        async with self.plugin._map_lock:
+            self.ensure_active()
+            if row is not None:
+                available = {item["umo"] for item in self.plugin.context_sync.available_sources(area, channel)}
+                if any(umo not in available for umo in [row["persona_umo"], *row["memory_umos"]]):
+                    raise ValueError("会话映射已变化，请重新选择来源")
+            previous = self.plugin.config.get("context_sources")
+            current = previous or {}
+            rules = [dict(item) for item in current.get("rules", [])]
+            rules = [item for item in rules if (item.get("area"), item.get("channel", "")) != (area, channel)]
+            if row is not None:
+                if len(rules) >= 64:
+                    raise ValueError("来源规则最多 64 条，请先移除不用的规则")
+                rules.append(row)
+            self.plugin.config["context_sources"] = {"rules": rules}
+            try:
+                self.plugin.config.save_config()
+            except Exception:
+                if previous is None:
+                    self.plugin.config.pop("context_sources", None)
+                else:
+                    self.plugin.config["context_sources"] = previous
+                raise
+        return {"ok": True, "message": "来源设置已保存；下次进房生效，当前房间请刷新上下文。", **self.bootstrap()}
 
     async def status(self) -> dict:
         data = await self.plugin.client.status()
@@ -107,7 +169,7 @@ class ControlPanel:
     async def save_binding(self, value: Any) -> dict:
         self.ensure_active()
         body = _object(value)
-        group = _group(body.get("group_id"))
+        group = binding_key(body.get("group_id"))
         areas = body.get("areas")
         if not isinstance(areas, list) or not 1 <= len(areas) <= 16:
             raise ValueError("请填写 1 至 16 个 Oopz 域 ID。")
@@ -127,18 +189,27 @@ class ControlPanel:
 
         def mutate(mappings):
             self.ensure_active()
-            validate_binding_overlap(mappings, group, areas, channel)
-            old = mappings.get(group, mappings.get(int(group)))
+            previous_key = binding_key(body.get("previous_key", group))
+            if previous_key != group and (group in mappings or legacy_alias(group) in mappings):
+                raise ValueError("目标 UMO 已有映射，请先编辑或移除该映射")
+            old = mappings.get(previous_key, mappings.get(legacy_alias(previous_key)))
             row = dict(old) if isinstance(old, dict) else {}
             row.pop("area", None)
             row.pop("areas", None)
-            row.update({"channel": channel, "label": label.strip()})
+            if "allow_control" in body and not isinstance(body["allow_control"], bool):
+                raise ValueError("控制权限开关必须为布尔值")
+            row.update({"channel": channel, "label": label.strip(), "allow_control": body.get("allow_control", True)})
+            if body.get("kind") in {"qq", "oopz", "session"}:
+                row["kind"] = body["kind"]
+            if previous_key != group:
+                mappings.pop(previous_key, None)
+                mappings.pop(legacy_alias(previous_key), None)
             if persona is not None:
                 row["persona_id"] = persona
             if platform is not None:
                 row["platform_id"] = platform
             row["areas" if len(areas) > 1 else "area"] = areas if len(areas) > 1 else areas[0]
-            mappings.pop(int(group), None)
+            mappings.pop(legacy_alias(group), None)
             mappings[group] = row
 
         await self.plugin._mutate_group_map(mutate)
@@ -178,12 +249,12 @@ class ControlPanel:
 
     async def delete_binding(self, value: Any) -> dict:
         self.ensure_active()
-        group = _group(_object(value).get("group_id"))
+        group = binding_key(_object(value).get("group_id"))
 
         def mutate(mappings):
             self.ensure_active()
             mappings.pop(group, None)
-            mappings.pop(int(group), None)
+            mappings.pop(legacy_alias(group), None)
 
         await self.plugin._mutate_group_map(mutate)
         return {"ok": True, "message": "群绑定已移除。", **self.bootstrap()}

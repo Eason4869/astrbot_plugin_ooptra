@@ -67,6 +67,9 @@ class OoptraError(Exception):
 
 
 class OoptraClient:
+    async def text_channels(self, area: str) -> dict:
+        return await self._request("GET", "/voice/astrbot/text-channels", params={"area": area})
+
     def __init__(
         self,
         base_url: str,
@@ -461,25 +464,17 @@ def resolve_group_mapping(
 
     if isinstance(raw, dict):
         areas = _as_area_list(raw.get("areas") if raw.get("areas") is not None else raw.get("area"))
-        return _pick_area(
+        result = _pick_area(
             areas,
             str(raw.get("channel") or "").strip(),
             str(raw.get("label") or "").strip(),
             preferred_area,
         )
+        if result is not None and "allow_control" in raw:
+            result["allow_control"] = raw["allow_control"]
+        return result
 
     return None
-
-
-def validate_binding_overlap(mappings: dict, group: str, areas: list[str], channel: str) -> None:
-    """Keep reverse room lookup unique, including legacy domain-wide mappings."""
-    for key in mappings:
-        if str(key) == group:
-            continue
-        other = resolve_group_mapping(mappings, str(key))
-        if (other and set(areas).intersection(other["areas"])
-                and (not channel or not other["channel"] or channel == other["channel"])):
-            raise ValueError(f"绑定冲突：所选范围已与 QQ 群 {key} 的绑定重叠，请先修改或移除原绑定。")
 
 
 def _pick_area(

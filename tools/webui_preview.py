@@ -79,6 +79,18 @@ def build_app(astrbot_source: Path, ooptra_source: Path | None = None):
             {"name": "群聊助手", "prompt": "自然聊天"},
             {"name": "游戏搭子", "prompt": "简洁友好"}])
 
+        def __init__(self):
+            def platform(identifier, bot):
+                async def call_action(*, action):
+                    if action == "get_login_info":
+                        return {"user_id": bot}
+                    if action == "get_group_list":
+                        return [{"group_id": 123456789, "group_name": "开黑群"}, {"group_id": 987654321, "group_name": "多域交流群"}]
+                    return [{"user_id": 456, "nickname": "演示联系人"}]
+                return types.SimpleNamespace(meta=lambda: types.SimpleNamespace(id=identifier, name="aiocqhttp"),
+                    get_client=lambda: types.SimpleNamespace(call_action=call_action))
+            self.platform_manager = types.SimpleNamespace(get_insts=lambda: [platform("QQ", "42"), platform("OopzWS", "99")])
+
         def get_all_stars(self):
             return []
 
@@ -94,7 +106,7 @@ def build_app(astrbot_source: Path, ooptra_source: Path | None = None):
             destination.write_text(json.dumps(self, ensure_ascii=False), encoding="utf-8")
 
     config = PreviewConfig(api_base="http://preview.invalid", api_token="preview-server-only-token", timeout_sec=8,
-        group_map={"123456789": {"area": "demo-area", "channel": "demo-channel", "label": "开黑群"},
+        group_map={"QQ:GroupMessage:123456789": {"area": "demo-area", "channel": "", "label": "开黑群", "kind": "qq"},
                    "987654321": {"areas": ["demo-area", "demo-area-2"], "channel": "", "label": "多域交流群"}})
     plugin = main.OoptraPlugin(Context(), config)
     state = {"ok": True, "joined": True, "enabled": True, "backend": "gemini_live", "state": "listening",
@@ -108,7 +120,7 @@ def build_app(astrbot_source: Path, ooptra_source: Path | None = None):
     maintenance = {"ok": True, "preflight": {"supported": True, "checks": [{"id": "preview", "passed": True, "detail": "模拟部署检查"}]},
                    "backups": [], "job": None, "check": None, "busy": False, "restore_supported": True, "current_channel": "dev"}
 
-    def upstream(request):
+    async def upstream(request):
         calls.append({"method": request.method, "path": request.url.path,
                       "body": json.loads(request.content) if request.content else None})
         if request.headers.get("Authorization") != "Bearer preview-server-only-token":
@@ -207,12 +219,17 @@ def build_app(astrbot_source: Path, ooptra_source: Path | None = None):
                     "provider": "", "pending_writes": 0}
                 data = {"ok": True, "astrbot_context": state["astrbot_context"]}
             elif plain == "/voice/astrbot/bindings":
-                if body.get("action") == "save":
-                    group = body["group_id"]
-                    config["group_map"][group] = {"area": body["areas"][0], "channel": body.get("channel", ""), "label": body.get("label", "")}
-                elif body.get("action") == "delete":
-                    config["group_map"].pop(body["group_id"], None)
-                data = {"ok": True, **plugin.panel.bootstrap()}
+                action = body.get("action", "list")
+                if action == "save":
+                    data = await plugin.panel.save_binding(body)
+                elif action == "delete":
+                    data = await plugin.panel.delete_binding(body)
+                elif action.startswith("source-"):
+                    data = await plugin.panel.sources(body)
+                else:
+                    data = {"ok": True, **plugin.panel.bootstrap()}
+            elif plain == "/voice/astrbot/text-channels":
+                data = {"ok": True, "bot_id": "99", "channels": [{"id": "text-channel", "name": "文字闲聊", "group_id": "789"}]}
             elif plain == "/oopz/areas":
                 data = {"ok": True, "areas": [{"id": "demo-area", "name": "开黑基地"}, {"id": "demo-area-2", "name": "朋友的小岛"}], "default_area": "demo-area", "default_channel": "demo-channel"}
             elif plain in {"/voice/channels", "/oopz/channels"}:

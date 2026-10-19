@@ -342,6 +342,28 @@ class TestPreferredAreaConsistency(unittest.TestCase):
 
 
 class TestCommandReplies(unittest.TestCase):
+    def test_umo_commands_migrate_and_unbind_legacy_group_without_leaving_fallback(self):
+        plugin, config = _plugin(group_map={"123456": {"area": "OLD", "persona_id": "keep"},
+            "Other:GroupMessage:123456": {"area": "OTHER"}})
+        event = FakeEvent()
+        event.unified_msg_origin = "Bot:GroupMessage:123456"
+        _run_first(plugin.voice_bind(event, "AREA-A"))
+        self.assertNotIn("123456", config["group_map"])
+        self.assertEqual(config["group_map"][event.unified_msg_origin]["persona_id"], "keep")
+        _run_first(plugin.voice_unbind(event))
+        self.assertIsNone(plugin._mapping(event))
+        self.assertIn("Other:GroupMessage:123456", config["group_map"])
+
+    def test_full_umo_control_mappings_distinguish_instances_and_private_sessions(self):
+        plugin, _ = _plugin(group_map={"A:GroupMessage:123": {"area": "AREA-A"},
+            "B:GroupMessage:123": {"area": "AREA-B"}, "A:FriendMessage:123": {"area": "AREA-C", "allow_control": False}})
+        event = FakeEvent(group_id="123")
+        for umo, expected in (("A:GroupMessage:123", "AREA-A"), ("B:GroupMessage:123", "AREA-B")):
+            event.unified_msg_origin = umo
+            self.assertEqual(plugin._mapping(event)["area"], expected)
+        event.unified_msg_origin = "A:FriendMessage:123"
+        self.assertIsNone(plugin._mapping(event))
+
     def test_join_reply_is_one_short_line(self) -> None:
         plugin, _ = _plugin(
             group_map={"123456": {"area": "AREA-B", "channel": "CHAN-B", "label": "开黑房"}}

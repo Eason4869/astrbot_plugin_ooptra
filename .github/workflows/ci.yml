@@ -54,6 +54,7 @@ jobs:
       - name: Check frontend syntax
         run: |
           node --check pages/control/app.js
+          node --check pages/control/session-manager.js
           node --check pages/control/console-adapter.js
           node --check pages/control/console-loader.js
       - name: Run console adapter tests
