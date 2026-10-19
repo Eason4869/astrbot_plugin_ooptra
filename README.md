@@ -2,7 +2,7 @@
 
 在 AstrBot 里管理 Oopz 语音房，共享所选群聊／私聊会话的人格和长期记忆。
 
-当前版本：**2.0.0（dev 分支）**。本次未创建正式发布或标签。
+当前正式版本：**[2.0.0](https://github.com/Eason4869/astrbot_plugin_ooptra/releases/tag/v2.0.0)**。
 
 > 此版本需配合 **[Ooptra 261019-dev 及以上版本](https://github.com/Eason4869/Ooptra/tree/dev)** 使用（对应预设正式版 **4.0.0**），人格与双向记忆依赖双方的 AstrBot 上下文协议 v1。请同时更新两个项目。
 
@@ -22,10 +22,10 @@ Ooptra 负责 Oopz 连接与音频对话；本插件负责会话映射、人格�
 ## 安装与连接
 
 1. 按 [Ooptra 安装说明](https://github.com/Eason4869/Ooptra/tree/dev) 启动配套服务，完成账号登录与控制台密码设置。
-2. 在 AstrBot 插件管理中安装本仓库的开发分支，或在插件目录执行：
+2. 在 AstrBot 插件管理中安装本仓库，或在插件目录安装正式版本：
 
    ```text
-   git clone -b dev https://github.com/Eason4869/astrbot_plugin_ooptra.git
+   git clone -b v2.0.0 https://github.com/Eason4869/astrbot_plugin_ooptra.git
    ```
 
 3. 安装插件依赖 `httpx`，重新加载插件。

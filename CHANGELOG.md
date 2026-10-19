@@ -6,7 +6,7 @@
 
 ### Version
 
-- 插件版本为 `2.0.0`；本次仅推送 `dev` 分支，未创建正式发布或标签。
+- 将 `dev` 分支合并至 `main`，正式发布 `2.0.0`，对应标签 `v2.0.0`。
 
 ### Added
 
@@ -209,6 +209,7 @@
 - QQ 指令：语音状态/进退语音/绑定解绑/自检/帮助
 - LLM 工具与 VOICE_API 客户端、mock、基础单测
 
+[2.0.0]: https://github.com/Eason4869/astrbot_plugin_ooptra/compare/v1.2.4...v2.0.0
 [1.2.4]: https://github.com/Eason4869/astrbot_plugin_ooptra/compare/v1.2.3...v1.2.4
 [1.2.3]: https://github.com/Eason4869/astrbot_plugin_ooptra/compare/v1.2.2...v1.2.3
 [1.2.2]: https://github.com/Eason4869/astrbot_plugin_ooptra/compare/152af42...v1.2.2
