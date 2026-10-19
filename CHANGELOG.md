@@ -10,6 +10,8 @@
 
 ### Added
 
+- GitHub Actions CI：在 main／beta／dev 推送和 Pull Request 时，运行完整 Python 单元测试矩阵、Node 22 控制台适配器测试与前端脚本语法检查。
+- 独立开发依赖 requirements-dev.txt，包含 Web 路由测试所需 Quart，避免 CI 因缺少可选依赖而跳过测试；插件运行依赖保持不变。
 - 自动识别受支持的 Memory Companion / LivingMemory 实例，提供绑定 QQ 群记忆检索、语音采集和明确记忆写入。
 - 从 AstrBot 内置人格列表选择语音人格，支持跟随 QQ 群或按群覆盖；记忆范围始终跟随绑定 QQ 群。
 - 语音上下文复用现有群绑定，支持实际房间反查、QQ 平台选择及显式成员身份关联。

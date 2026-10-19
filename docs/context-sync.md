@@ -40,10 +40,20 @@ Memory Companion 开启额外授权门时，未获授权的语音接入不会绕
 ## 验证
 
 ```text
+python -m pip install -r requirements-dev.txt
 python -m unittest discover -s tests -q
 node --test tests/test_console_adapter.cjs
 node --check pages/control/app.js
+node --check pages/control/console-adapter.js
+node --check pages/control/console-loader.js
 ```
+
+GitHub Actions 工作流见 [.github/workflows/ci.yml](../.github/workflows/ci.yml)：
+Python 测试覆盖 Ubuntu 3.10／3.13 与 Windows 3.13，Node 测试使用 Node 22。
+Python 任务安装 requirements-dev.txt，其中 Quart 用于完整执行 Web 路由测试，
+避免可选依赖缺失时跳过这部分测试；它不增加插件运行依赖。测试通过模拟 AstrBot 和
+第三方记忆插件接口运行，无需真实账号、API Token 或 AstrBot 服务。
+Node 任务使用内置测试运行器，无需 npm 安装。
 
 新增测试覆盖绑定唯一性、人格解析、主插件选择、白名单、授权门、两种适配器的
 读写调用、去重和停止行为。浏览器检查使用本地预览环境；真实语音识别质量、

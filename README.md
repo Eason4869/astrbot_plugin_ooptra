@@ -127,7 +127,7 @@ Oopz 文字桥接仍通过反向 WebSocket 单独连接 AstrBot；本插件不�
 - **暂时断线**：当前会话可保留已加载人格，记忆查询会明确失败；语音采集进入 Ooptra 本地待写队列，重连后重试。
 - **普通聊天未立即变成长期记忆**：先区分“对话已采集”与“长期记忆已生成”；后者由记忆插件的总结策略决定。
 
-开发、协议和验证边界见 [同步开发说明](docs/context-sync.md)，版本变化见 [CHANGELOG](CHANGELOG.md)。本地自动化验证不等于真实 QQ 群和 Oopz 语音房验收。
+开发、协议和验证边界见 [同步开发说明](docs/context-sync.md)，版本变化见 [CHANGELOG](CHANGELOG.md)。[GitHub Actions CI](https://github.com/Eason4869/astrbot_plugin_ooptra/actions/workflows/ci.yml) 在 `main`、`beta`、`dev` 推送及 Pull Request 时运行全部 Python 单元测试（Ubuntu Python 3.10／3.13、Windows Python 3.13）、Node 22 控制台适配器测试和前端脚本语法检查。自动化验证使用模拟运行时，不等于真实 QQ 群和 Oopz 语音房验收。
 
 ## 许可
 
