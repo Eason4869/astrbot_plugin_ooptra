@@ -85,7 +85,7 @@ class OoptraClient:
         headers: dict[str, str | bytes] = {"Accept": "application/json"}
         if self.token:
             # Ooptra compares UTF-8 credentials; HTTPX encodes str headers as ASCII.
-            headers["Authorization"] = f"Bearer {self.token}".encode("utf-8")
+            headers["Authorization"] = f"Bearer {self.token}".encode()
         return headers
 
     async def _request(
@@ -187,6 +187,21 @@ class OoptraClient:
 
     async def status(self) -> dict[str, Any]:
         return _expect_mapping(await self._request("GET", "/voice/status"), "/voice/status")
+
+    async def context_poll(self, client_id: str = "") -> list[dict]:
+        result = _expect_mapping(await self._request(
+            "GET", "/voice/astrbot/events", params={"client_id": client_id}, timeout_sec=25), "/voice/astrbot/events")
+        if result.get("protocol") != 1 or not isinstance(result.get("events"), list):
+            raise OoptraError("Ooptra 不支持人格与记忆同步协议，请更新配套服务")
+        return result["events"]
+
+    async def context_result(self, request_id: str, result: dict, client_id: str = "") -> dict:
+        return _expect_mapping(await self._request("POST", "/voice/astrbot/result",
+            json_body={"request_id": request_id, "result": result, "client_id": client_id}), "/voice/astrbot/result")
+
+    async def context_refresh(self) -> dict:
+        return _expect_mapping(await self._request("POST", "/voice/astrbot/refresh",
+            json_body={}), "/voice/astrbot/refresh")
 
     async def members(self, area: str, channel: str) -> dict[str, Any]:
         data = await self._request(
@@ -454,6 +469,17 @@ def resolve_group_mapping(
         )
 
     return None
+
+
+def validate_binding_overlap(mappings: dict, group: str, areas: list[str], channel: str) -> None:
+    """Keep reverse room lookup unique, including legacy domain-wide mappings."""
+    for key in mappings:
+        if str(key) == group:
+            continue
+        other = resolve_group_mapping(mappings, str(key))
+        if (other and set(areas).intersection(other["areas"])
+                and (not channel or not other["channel"] or channel == other["channel"])):
+            raise ValueError(f"绑定冲突：所选范围已与 QQ 群 {key} 的绑定重叠，请先修改或移除原绑定。")
 
 
 def _pick_area(

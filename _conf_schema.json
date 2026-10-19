@@ -51,5 +51,41 @@
     "type": "bool",
     "default": true,
     "hint": "关闭后模型无法查询/控制语音（工具会返回已禁用）"
+  },
+  "context_sync_enabled": {
+    "description": "同步 AstrBot 人格与双向记忆",
+    "type": "bool",
+    "default": false,
+    "hint": "复用 QQ 群与 Oopz 语音频道绑定。开启后重进语音或在工作台刷新上下文。"
+  },
+  "context_persona_id": {
+    "description": "语音人格 ID",
+    "type": "string",
+    "default": "",
+    "hint": "留空跟随绑定 QQ 群的人格；可在工作台从内置人格列表选择。"
+  },
+  "context_memory_provider": {
+    "description": "主记忆插件",
+    "type": "string",
+    "default": "auto",
+    "options": [
+      "auto",
+      "none",
+      "memory_companion",
+      "livingmemory"
+    ],
+    "hint": "auto 自动识别；多个记忆插件时需指定一个；none 只同步人格。"
+  },
+  "context_platform_id": {
+    "description": "QQ 平台实例 ID",
+    "type": "string",
+    "default": "",
+    "hint": "只有一个 aiocqhttp 实例时自动识别；多个时填写 AstrBot 平台 ID。"
+  },
+  "context_identity_links": {
+    "description": "Oopz UID 与 QQ 用户关联",
+    "type": "dict",
+    "default": {},
+    "hint": "键为 Oopz UID，值为 QQ 号；未关联者以 Oopz 来源记录，不根据昵称猜测。"
   }
 }

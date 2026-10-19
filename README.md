@@ -1,367 +1,134 @@
-# astrbot_plugin_ooptra
+# Oopz 语音桥 · astrbot_plugin_ooptra
 
-> **Ooptra 配套插件。** 本插件用于 [AstrBot](https://github.com/AstrBotDevs/AstrBot)，通过 HTTP 调用 [Ooptra](https://github.com/Eason4869/Ooptra) 的 API，在 **AstrBot 工作台和 QQ** 中查询 / 管理 **Oopz 语音频道**。
->
-> **推荐与 [Ooptra](https://github.com/Eason4869/Ooptra) 配合使用**：Ooptra 负责 Oopz ↔ OneBot 文字桥接与语音进房，本插件负责 QQ 侧指令与群映射。单独使用本插件无法进语音（需要 Ooptra 提供 VOICE_API）。
->
-> **须使用 Ooptra 3.0 及以上版本（≥ 3.0.0）**，语音串门依赖 3.0 新增的分域自动串门接口。用 `/语音自检` 可以检查连接。
+在 AstrBot 里管理 Oopz 语音房，让语音聊天使用 QQ 群的人格和长期记忆。
 
-**Oopz 语音桥 · QQ ↔ Oopz**
+当前开发版：**1.3.0-dev**。
 
-在 QQ 群里查语音人数、看状态，一键让 Bot 进/退 Oopz 语音频道。
+> 此版本需配合 **[Ooptra 261019.1-dev 及以上版本](https://github.com/Eason4869/Ooptra/tree/dev)** 使用，人格与双向记忆依赖双方的 AstrBot 上下文协议 v1。请同时更新两个项目。
 
----
+Ooptra 负责 Oopz 连接与音频对话；本插件负责 QQ 群绑定、人格选择、记忆接入和 AstrBot 内的语音工作台。
 
-## 功能一览
+## 功能
 
-| 指令 | 说明 | 权限 |
-|------|------|------|
-| `/语音状态` `/语音人数` | 查看绑定域内各语音频道在线人数（无需默认频道） | 全员 |
-| `/进语音 [频道名\|频道ID]` | 进默认频道；也可按频道名/ID 指定其他频道 | 可配置 |
-| `/退语音` | Bot 退出语音 | 可配置 |
-| `/语音方案` | 查询当前语音方案（无需群绑定） | 全员 |
-| `/语音方案 gemini` / `/语音方案 mimo` | 切换 Gemini Live / MiMo 级联 | 默认仅管理员 |
-| `/语音串门 开\|关` | 开启/关闭本群绑定域的自动语音串门 | 仅管理员（不可配置放宽） |
-| `/语音绑定 <域ID> [频道ID] [备注]` | 将当前 QQ 群绑定到 Oopz 域/频道 | 管理员 |
-| `/语音解绑` | 解除当前群绑定 | 管理员 |
-| `/语音自检` | 检测连通性并逐条探测契约端点 | 全员 |
-| `/语音帮助` | 指令说明 | 全员 |
+| 功能 | 在哪里使用 |
+| --- | --- |
+| 房间控制 | 工作台查看人数、麦克风／听音状态，一键进退房 |
+| QQ 命令与 LLM 工具 | 查询语音、进退房、切换 Gemini Live／MiMo、控制自动串门 |
+| 群绑定 | QQ 群 ↔ Oopz 域／频道；语音上下文自动复用已有绑定 |
+| 内置人格 | 跟随 QQ 群人格，或从 AstrBot 内置人格列表手选；支持按群覆盖 |
+| 双向记忆 | 自动识别受支持的记忆插件，向语音提供群记忆并采集语音对话 |
+| 完整控制台 | 从 AstrBot 内打开部署中的 Ooptra 页面，配置模型、账号和更新备份 |
 
-**默认目标**：在 Ooptra 控制台「语音台 → 会话控制」选中域/频道后点**「设为默认」**，即写入 `OOPZ_CONFIG.default_area` / `default_channel`。
-- `/进语音` 不带参数时进**默认频道**（群绑定里没填频道时也用它）
-- 一个 QQ 群绑了多个域（`group_map` 里 `areas` 为列表）时，状态查询、进房与 LLM 工具都按**默认域**择一
-- **跨域保护**：Ooptra 的默认频道属于它的默认**域**。若本群绑的是别的域，该默认频道不会被采用（进房前还会到域内频道表核实一次），避免误入其他域的房间
+## 安装与连接
 
-可选 LLM 工具（`enable_llm_tools`）：
-
-- `query_oopz_voice_members` / `query_oopz_voice_status`
-- `join_oopz_voice` / `leave_oopz_voice`
-- `set_oopz_voice_backend`：查询/切换语音方案（参数为空时仅查询，切换默认仅管理员）
-
-关闭后工具会返回「已禁用」。`join` 同样受绑定频道与权限约束；方案切换工具与命令共用权限、锁与冷却。
-
-### 切换语音方案
-
-```text
-/语音方案                 # 查询当前方案，全员可用
-/语音方案 gemini          # 管理员切换至 Gemini Live
-/语音方案 mimo            # 管理员切换至 MiMo 级联
-```
-
-也支持 `Gemini Live`、`MiMo 级联`、`gemini_live`、`mimo_cascade`；命令别名为 `/voice_backend`、`/切换语音方案`、`/语音切换`。启用 LLM 工具后，管理员也可通过自然语言要求切换。
-
-切换复用 Ooptra WebUI 的 `POST /api/config`，只写入 `voice.backend`，由 Ooptra 持久化并热重载。请提前在 Ooptra 中配置相应方案的密钥与模型；切换沿用既有配置，不会自动开启语音对话。支持热重载时，已在房的 Bot 由 Ooptra 重建语音后端/会话；旧服务提示需要重启时，插件会显示提示，不会误报已生效。
-
-**该选择是 Ooptra 实例的全局设置**，会影响连接同一实例的所有 QQ 群，无需先绑定群。`backend_admin_only` 默认 `true`（管理员判断与现有进退房工具一致，使用 AstrBot 的 `event.is_admin()`）；命令和 LLM 工具都受此限制，且与进/退房共用约 3 秒冷却和并发锁。
-
-**切换必须使用 WebUI 地址**：`api_base` 默认 `http://127.0.0.1:3090`，`api_token` 填 `WEBUI_CONFIG.token`。独立 VOICE_API 端口提供查询/进退房接口，但不提供 `/api/config`；本功能只需更新插件，无需修改 Ooptra 代码。若服务器缺少该接口、鉴权失败、配置未确认保存或会话重建失败，插件会明确提示。
-
----
-
-### 自动语音串门
-
-```text
-/语音串门 开              # 管理员开启本群绑定域的自动串门
-/语音串门 关              # 管理员关闭本群绑定域的自动串门
-```
-
-**仅 AstrBot 管理员可用**，使用 `event.is_admin()` 判断；不受 `join_admin_only`、`backend_admin_only` 或 LLM 工具开关影响，也没有放宽权限的配置。请先在 QQ 群用 `/语音绑定 <域ID> [频道ID] [备注]` 绑定域；私聊或未绑定群不能修改串门开关。一个群绑定多个域时，沿用状态查询的选择规则：优先选择 Ooptra 默认域（须在绑定列表内），否则选择首个绑定域。
-
-命令调用 `POST /voice/auto-visit/config`，仅提交 `{"updates":{"areas":{"目标域ID":{"enabled":true}}}}`（关闭时为 `false`）。Ooptra 保存并热应用该域开关，其他域、全局规则、每日上限和域覆盖保持原有配置；连接同一 Ooptra 实例、绑定同一域的群共用此开关。命令与其他语音控制共用约 3 秒冷却和并发锁。
-
-开启后按照 Ooptra 配置的概率、检查间隔、冷却和每日上限运行，不会立刻进房。请先配置语音后端并开启 Ooptra 语音总开关；域开关不会自动启用语音总开关或恢复已暂停的串门控制器。若控制器暂停，插件会提示在 Ooptra「语音台 → 自动串门」检查后恢复。缺少接口、鉴权失败、保存/应用失败或返回状态不符时会明确报错。
-
-## 架构位置
-
-```text
-QQ 客户端
-   │  OneBot / 官方 API
-   ▼
-AstrBot  ──本插件──HTTP──►  Ooptra VOICE_API  ──►  Oopz / Agora 语音房
-   ▲
-   │  reverse WebSocket（OneBot v11）
-Ooptra  ◄── Oopz 文字消息
-```
-
-- **文字**人格与记忆：留在 AstrBot
-- **语音**进房 / 对话大脑：在 [Ooptra](https://github.com/Eason4869/Ooptra)
-- **本插件**：群映射、状态查询、进退房指令，不跑 LLM 对话
-
----
-
-## 前置条件
-
-1. 已运行 **[Ooptra](https://github.com/Eason4869/Ooptra) 3.0 及以上版本（≥ 3.0.0）**，并启用 `VOICE_API`（默认与 WebUI 同源：`http://127.0.0.1:3090`）
-2. **AstrBot ≥ 4.16**，已接入 QQ（aiocqhttp / QQ 官方机器人）
-3. 依赖 `httpx`
-
-### Ooptra VOICE_API 契约
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/health` | 健康检查；**仅当服务不认识该端点（404/405/501）时**才回退 `/voice/status` |
-| GET | `/voice/status` | Bot 是否在语音房（含默认域/默认频道） |
-| GET | `/voice/channels?area=` | 域内语音频道与在线人数（**需 Ooptra ≥ 2.0.0**） |
-| GET | `/voice/members?area=&channel=` | 频道在线人数与成员（`channel` 留空表示整域汇总） |
-| POST | `/voice/join` | Body: `{"area","channel"}` |
-| POST | `/voice/leave` | 退出语音 |
-| POST | `/voice/auto-visit/config` | Body: `{"updates":{"areas":{"域ID":{"enabled":true}}}}`；保存并应用分域串门开关（需 Ooptra ≥ 3.0.0） |
-| POST | `/api/config` | Body: `{"updates":{"voice":{"backend":"gemini_live"}}}`（或 `mimo_cascade`）；仅 WebUI 提供，保存并应用后端选择 |
-| — | `Authorization: Bearer <token>` | 与 Ooptra 侧令牌一致；两边都留空则不校验 |
-
-成员字段兼容 `mic`/`speaker` 或 `m`/`hm`（0=闭，1=开）；Oopz 不返回静音状态时字段为 `null`（未知，不会伪造成「开麦」）。
-
-**端口选哪个**：推荐 **`3090`**（Ooptra WebUI 端口，已含全部 VOICE_API 和方案切换需要的 `/api/config`）。Ooptra 2.0.0 起，可选的独立端口 `3091`（`VOICE_API_CONFIG`）与 `3090` 的 **VOICE_API 路由一致**，查询/进退房可使用任一端口；切换方案需用 WebUI 端口。
-
-**令牌对齐**：走 `3090` 时鉴权用 **`WEBUI_CONFIG.token`**；只有单独开了 `VOICE_API_CONFIG`（`3091`）时才用 **`VOICE_API_CONFIG.token`**。本插件的 `api_token` 填其中生效的那个，两边都留空则不校验。
-
-> 本插件的 HTTP 请求固定 `trust_env=False`：httpx 与 requests 不同，**不会**自动绕过 localhost 代理。否则系统里只要有 `HTTP_PROXY`，发往 `127.0.0.1` 的请求就会被送去代理（报「无法连接」且令牌外泄）。
-
-> 未实现 VOICE_API 时可用 `tools/mock_voice_api.py` 联调（**mock 不校验 token**）。
-
----
-
-## 安装
-
-1. 将本仓库放入 AstrBot 插件目录：
+1. 按 [Ooptra 安装说明](https://github.com/Eason4869/Ooptra/tree/dev) 启动配套服务，完成账号登录与控制台密码设置。
+2. 在 AstrBot 插件管理中安装本仓库的开发分支，或在插件目录执行：
 
    ```text
-   AstrBot/data/plugins/astrbot_plugin_ooptra/
+   git clone -b dev https://github.com/Eason4869/astrbot_plugin_ooptra.git
    ```
 
-2. 安装依赖：
+3. 安装插件依赖 `httpx`，重新加载插件。
+4. 在插件配置填写 `api_base` 和 `api_token`，再打开插件工作台。
 
-   ```bash
-   pip install -r requirements.txt
-   ```
+推荐 `api_base=http://127.0.0.1:3090`，`api_token` 填 Ooptra 控制台密码。AstrBot 与 Ooptra 分别在容器或不同机器时，填写 AstrBot 服务端能访问的 Ooptra 地址；浏览器自身的 `127.0.0.1` 不能代替部署地址。
 
-3. WebUI → 插件 → 启用 → 配置 `api_base` / `api_token`（令牌与 Ooptra 侧生效项一致，默认填 `WEBUI_CONFIG.token`）
+使用当前带人格管理接口的 AstrBot。原有查询和语音控制支持已声明的 QQ 平台；**本版人格与记忆同步支持 `aiocqhttp`**。实际接口缺失时会显示未就绪，不会假装已接入。
 
-4. 在 Ooptra 控制台「语音台 → 会话控制」查看并复制**域 ID / 频道 ID**，然后在目标 QQ 群：
+Oopz 文字桥接仍通过反向 WebSocket 单独连接 AstrBot；本插件不会替你创建该平台。
 
-   ```text
-   /语音绑定 <Oopz域ID> <频道ID> 开黑房
-   /语音自检
-   /语音状态
-   ```
+## 先绑定 QQ 群与语音房
 
----
+也可以在配套 Ooptra「语音台 → QQ 群对应」直接选域和频道，查看 **域 / 频道 → QQ 群** 的关系卡片并保存。两边共用同一份插件配置。指定频道与整个域的范围明确区分，重叠绑定会拒绝保存；历史多域配置在本插件工作台维护。
 
-## AstrBot 内的 Ooptra 工作台
-
-重载插件后，在 AstrBot WebUI 的插件详情中打开 **Ooptra 工作台**。需要支持
-Plugin Pages / Views 的 AstrBot 后端和 Dashboard；旧版若没有页面入口，请一起
-升级后端与 Dashboard。原有 QQ 命令与 LLM 工具仍可使用。
-
-- **语音台**：当前房间和方案、域内频道人数、成员闭麦 / 闭听状态；进房、退房、
-  Gemini Live / MiMo 方案切换，以及当前域的自动串门开关。
-- **群绑定**：填写 QQ 群号、域 ID、可选频道 ID 和备注；可添加、编辑、移除。
-  一个群的多个域可以逐行填写，保存时完整保留。编辑不会删除其他群或已有扩展字段。
-- **完整控制台**：点击「打开完整控制台」，直接在 AstrBot 内进入 Ooptra 原界面，
-  继续管理账号、模型配置、日志、人格、记忆和详细串门规则；点击「返回插件工作台」返回。
-
-**从 1.2.3 起，完整控制台实时读取当前部署的 Ooptra 页面**，包括原版 HTML、样式、图标和所有脚本，
-在 AstrBot 内部窗口中做沙箱兼容，不再显示插件打包的旧快照。Ooptra 更新后刷新控制台即可读取新页面。
-工作台保持 Ooptra 风格，完整控制台使用部署实例自己的视觉样式；初始主题跟随 AstrBot。
-详见[前端来源与兼容方式](pages/control/CONSOLE_SOURCE.md)。
-
-接口仍使用已审核的方法与路由白名单。若后续 Ooptra 增加新的接口或改变前端结构，可能需要升级插件兼容层；
-不支持的接口或页面会明确报错。控制台每次打开会读取服务，Ooptra 离线时显示重试与返回入口，不回退到旧版页面。
-
-**Ooptra 更新后提示「不支持的控制台接口」时**：更新插件至 **1.2.4 或更新版本**，
-重载插件并关闭、重新打开工作台。1.2.4 适配新版控制台的独立会话认证流程，继续实时读取部署中的页面。
-已配置的 `api_token` 有效时自动进入控制台；密码不一致时，在完整控制台登录，
-经 Ooptra 验证后会将该密码保存为插件的 `api_token`。未设置密码时，首次设置是否允许由 Ooptra 判断。
-中文密码可用，密码不能包含控制字符。若首次设置在 Ooptra 成功但插件配置保存失败，
-修复配置文件权限后重新打开控制台，使用刚设置的同一密码登录。
-「退出登录」结束当前内部页面的访问；插件保留共享凭据供常用操作使用，重新打开页面会再次验证该凭据。
-
-部署的 Ooptra 支持时，完整控制台提供 **自检与试听**（诊断、独立音频试听和进退房台词）及 **更新与备份**。
-这些新功能需要 Ooptra `261007-beta` 或包含相应接口的更新版本；1.2.3 已联调 Ooptra **3.2.0** 前端，旧服务缺少接口时会明确报错。
-试听音频在浏览器播放，不进入语音房，也不写共享记忆。维护操作由 Ooptra 检查部署能力并执行，
-升级与恢复沿用原控制台的确认步骤。备份含配置与凭据，下载通过 AstrBot 鉴权；
-单次下载上限为 128 MiB，更大的备份请从 Ooptra 原控制台下载。
-
-插件列表与工作台统一使用 Ooptra 蓝绿双对话环 LOGO，原紫色耳机标识已弃用。
-
-**旧版完整控制台提示「请从 AstrBot 插件详情打开控制台」时**：更新插件到
-**1.2.1 或更新版本**，重载插件并关闭、重新打开工作台。此修复适配 AstrBot
-在页面底部注入桥接脚本的加载顺序，无需修改 Ooptra 的端口或令牌。
-
-简易工作台顶部显示「**本插件需安装Ooptra方能完美运行**」，附
-[Ooptra GitHub 仓库](https://github.com/Eason4869/Ooptra) 地址。
-在 AstrBot 沙箱内点击该链接会显示地址及复制按钮，便于打开安装说明。
-
-### 连接与权限
-
-页面通过 **浏览器 → AstrBot → 插件 → Ooptra** 调用接口，使用已有 `api_base`
-和 `api_token`，不会把 Ooptra 访问令牌下发到浏览器，也无需浏览器直接连接 Ooptra。
-请让 `api_base` 指向 **WebUI 端口（默认 3090）**，独立 VOICE_API 端口不能提供完整控制台。
-默认 `http://127.0.0.1:3090` 是从 **AstrBot 后端**连接 Ooptra，不是从访问者的浏览器连接；
-远程访问 AstrBot 无需额外公开 Ooptra 端口。不要把浏览器 iframe 地址写死为本机回环地址。
-Docker 部署时，这个地址必须从 **AstrBot 容器内**可访问：两个容器可使用服务名，
-访问宿主机可使用部署环境支持的宿主机地址；容器内 `127.0.0.1` 指向该容器自身。
-
-页面仅供已登录 AstrBot 管理面板的用户使用，作为管理员操作入口。
-进退房仍遵守 `allow_join`，而 `join_admin_only` / `backend_admin_only` 是对 QQ 命令
-和 LLM 工具的限制。页面、QQ 命令和工具共用语音操作锁及约 3 秒冷却。
-全局方案切换影响连接同一实例的所有群；分域串门影响绑定同一个域的群。
-账号、人格等配置和保存后重新连接不会被语音冷却拦截。
-停用或卸载插件会注销页面接口并关闭日志订阅，旧页面需启用插件后重新打开。
-
-Ooptra 暂时离线时仍可管理本地群绑定。完整控制台在沙箱内使用页面内存保存临时
-选项，模型配置与群绑定则分别持久化到 Ooptra 和插件配置。日志跟随与下载通过
-AstrBot 桥接；完整控制台中的外部 GitHub 链接显示可复制地址。
-
-## 配置项
-
-| 配置 | 默认 | 说明 |
-|------|------|------|
-| `api_base` | `http://127.0.0.1:3090` | VOICE_API 根地址（推荐 3090，= Ooptra WebUI 端口，已含全部 VOICE_API） |
-| `api_token` | 空 | Bearer 令牌；填 Ooptra 的 `WEBUI_CONFIG.token`（用 3090 时），或独立 VOICE_API 时的 `VOICE_API_CONFIG.token` |
-| `timeout_sec` | `8` | HTTP 超时（秒），≤0 时回退 8 |
-| `group_map` | `{}` | QQ 群号 → `{area, channel, label}` |
-| `allow_join` | `true` | 是否允许进/退语音 |
-| `join_admin_only` | `false` | 进/退语音是否仅管理员 |
-| `backend_admin_only` | `true` | 语音方案切换是否仅管理员；查询仍对全员开放，命令和 LLM 工具共用限制 |
-| `allow_arbitrary_channel` | `false` | 是否允许进非绑定频道（管理员始终可临时指定） |
-| `enable_llm_tools` | `true` | LLM 工具总开关（关闭后工具直接拒绝） |
-
-### group_map 示例
-
-```json
-{
-  "123456789": {
-    "area": "6ad0261bc4eb41e882692531981a0972",
-    "channel": "channel-uid-xxx",
-    "label": "开黑房"
-  }
-}
-```
-
-也支持简写：`"123456789": "域ID:频道ID"`。
-
-一群绑多个域（查询/进房按 Ooptra 默认域择一）：
-
-```json
-{
-  "123456789": {
-    "areas": ["域ID-1", "域ID-2"],
-    "channel": "channel-uid-xxx",
-    "label": "多域群"
-  }
-}
-```
-
-绑定时若把中文备注误填到频道位，会自动识别为备注（`/语音绑定 域ID 开黑房`）。
-
----
-
-## 安全默认
-
-- 进房默认**只允许本群绑定的频道**，减少误入/滥用
-- **跨域保护**：Ooptra 的默认频道不会把 Bot 带进本群绑定域之外的房间
-- 请求固定 `trust_env=False`，令牌不会因为系统代理而外泄给第三方
-- 进/退语音与方案切换共用并发锁和约 3 秒冷却，降低刷指令
-- 方案切换默认仅管理员，影响 Ooptra 全局后端选择
-- `api_token` 在 WebUI 中掩码显示
-- 绑定 / 解绑需管理员
-
----
-
-## 本地开发
+在工作台「群绑定」填写 QQ 群号、Oopz 域和默认语音频道，也可以在 QQ 群发送：
 
 ```text
-astrbot_plugin_ooptra/
-├── main.py                    # 指令 + LLM 工具 + 页面生命周期
-├── ooptra_client.py           # Ooptra 客户端与格式化
-├── webui.py                   # 页面服务、群绑定与控制台路由白名单
-├── web_routes.py              # AstrBot 原生 API / 旧版 Quart 适配
-├── live_console.py            # 实时页面与资源读取、部署前端沙箱兼容
-├── pages/control/             # 简易工作台、完整控制台与兼容层
-├── _conf_schema.json
-├── metadata.yaml
-├── tools/mock_voice_api.py    # 本地 mock（两域多频道、方案切换）
-└── tests/
-    ├── test_client_unit.py    # 纯函数
-    ├── test_client_http.py    # HTTP 分支（httpx.MockTransport）
-    ├── test_main_logic.py     # 指令层（跨域保护/锁/文案/自检）
-    ├── test_voice_backend.py  # 方案切换（权限/HTTP/并发/mock 联调）
-    ├── test_webui.py          # 群绑定、完整控制台、冷却与停用保护
-    ├── test_web_routes.py     # 可选 Quart 路由与 SSE 生命周期
-    ├── test_live_console.py   # 部署页面变化、资源限制与安全边界
-    └── test_console_adapter.cjs # Node 内置测试运行器验证兼容层
+/语音绑定 <域ID> [频道ID] [备注]
+/语音映射
+/进语音
+/退语音
 ```
 
-```bash
-python -m unittest discover -s tests -v     # 或 python -m pytest tests -q
-python tools/mock_voice_api.py 3099         # 换个端口，避免和真实 Ooptra 撞
+一个群可绑定多个域，原有控制操作优先选 Ooptra 默认域，否则取第一个域。对于上下文同步，则根据**实际进入的域和频道**反查来源群：手动进房、QQ 命令和自动串门使用同一规则。
+
+仅绑定域时，该域内房间可匹配该群；指定频道时仅匹配该频道。一个房间匹配多个 QQ 群时不会合并它们的记忆，请调整为唯一来源。多个 QQ 平台实例时，在绑定编辑或插件配置填写平台 ID。
+
+## 开启人格与双向记忆
+
+在工作台「人格与双向记忆」完成：
+
+1. 开启同步。
+2. 人格选择「跟随绑定 QQ 群当前人格」，或手选一个 AstrBot 内置人格。
+3. 主记忆插件选择「自动识别」。安装多个受支持插件时，手选其中一个；选择「只同步人格」可关闭记忆接入。
+4. 保存，重新进房；当前已在房时点击「刷新当前语音上下文」。刷新会重建模型会话。
+
+语音房继承 AstrBot 人格后，Ooptra 原人格页会显示实际来源，并锁定本地人格编辑。停用同步并刷新当前上下文后恢复本地人格。
+
+### 两个方向如何工作
+
+- **QQ → 语音**：语音可以检索绑定 QQ 群允许访问的记忆，例如共同经历、活动约定和偏好。
+- **语音 → QQ**：语音对话进入同一个记忆插件的采集与总结流程，之后 QQ 聊天可使用其生成的记忆。
+- **明确要求记住**：调用记忆插件的写入接口，等待真实成功结果；普通对话的长期总结仍由记忆插件决定。
+
+手选语音人格只改变语音扮演风格，**记忆来源与人格过滤仍跟随绑定 QQ 群**，使 QQ 与语音面向同一个记忆范围。公共语音不自动读取个人私聊记忆。
+
+### 支持的记忆插件
+
+| 插件 | 方式与条件 |
+| --- | --- |
+| [Memory Companion](https://github.com/menglimi/astrbot_plugin_memory_companion) | 使用现有 Bridge 检索、语音时间线采集与明确写入；保留权限及采集控制 |
+| [LivingMemory](https://github.com/lxfight-s-Astrbot-Plugins/astrbot_plugin_livingmemory) | 适配其群作用域、存储回执、历史限制、反思与长期记忆写入接口 |
+
+检测的是已启用实例及实际接口；其他记忆插件需增加适配器，不会自动读写未知插件的数据库。Memory Companion 开启额外授权校验而尚未授权语音桥接时，不能绕过校验。第三方升级造成接口变化时，工作台会显示不兼容或失败状态。
+
+### 成员身份
+
+群绑定解决记忆属于哪个群；若要确认某个 Oopz 发言者对应哪个 QQ 用户，可在 `context_identity_links` 显式配置：
+
+```json
+{"Oopz用户UID": "QQ号"}
 ```
 
-改代码后可在 AstrBot WebUI 重载插件。
+未关联者以 Oopz 来源身份记录；混合发言不归到具体 QQ 用户，不根据昵称猜测。QQ 群开启成员独立会话时，无法自动归并为唯一群上下文。
 
-页面兼容层测试无需 npm 依赖：`node --test tests/test_console_adapter.cjs`。
-Quart 路由测试需要开发依赖 `quart`；生产环境不需要额外安装 Quart。
+## 常用命令
 
-完整沙箱联调使用真实 AstrBot API 与官方桥接 SDK、模拟 Ooptra 数据，不会修改真实服务：
+| 命令 | 用途 | 权限 |
+| --- | --- | --- |
+| `/语音状态` | 语音人数与成员状态 | 普通成员 |
+| `/语音自检` | 配套服务连接检查 | 普通成员 |
+| `/进语音 [频道]`、`/退语音` | 控制已绑定的语音房 | 受 `join_admin_only` 控制 |
+| `/语音方案` | 查看当前后端 | 普通成员 |
+| `/语音方案 gemini` 或 `mimo` | 切换语音后端 | 默认仅管理员 |
+| `/语音串门 开` 或 `关` | 开关绑定域的自动串门 | AstrBot 管理员 |
+| `/语音绑定`、`/语音解绑` | 管理群绑定 | AstrBot 管理员 |
 
-```bash
-pip install fastapi hypercorn quart
-python tools/webui_preview.py /path/to/AstrBot --port 18765
-# 在另一个终端，使用已安装的 Playwright 包和系统 Microsoft Edge：
-node tools/webui_smoke.cjs http://127.0.0.1:18765 /path/to/node_modules/playwright
-```
+查询、进退房和后端切换也可通过可选 LLM 工具调用。关闭 `enable_llm_tools` 后，工具返回禁用状态。一个 Ooptra 实例同一时间只有一个语音会话，后端、音量与进退房操作会影响该实例当前所在房间。
 
-AstrBot 源码需包含 `astrbot/api/web.py`、`astrbot/core/utils/upload.py`、
-`astrbot/dashboard/plugin_page_bridge.js` 和 `astrbot/dashboard/services/plugin_page_service.py`。
-测试复用实际 HTML 桥接注入逻辑与原生页面的 iframe 沙箱限制，
-覆盖群绑定落盘、离线编辑、语音控制、保存并重连、日志、主题及手机布局；
-证据输出到已忽略的 `.webui-evidence/`。真实部署仍需以自己的 AstrBot / Ooptra 连接验证。
+## 同步配置
 
----
+| 配置 | 默认值 | 说明 |
+| --- | --- | --- |
+| `context_sync_enabled` | `false` | 人格与双向记忆总开关 |
+| `context_persona_id` | 空 | 空值跟随 QQ 群，可在工作台选择内置人格 |
+| `context_memory_provider` | `auto` | 自动、只同步人格、Memory Companion 或 LivingMemory |
+| `context_platform_id` | 空 | 单个 aiocqhttp 实例自动确定；多个时指定 |
+| `context_identity_links` | `{}` | Oopz UID 到 QQ 号的显式关联 |
 
-## 常见问题
+现有 `group_map` 可增加 `persona_id` 和 `platform_id`，覆盖该群的语音人格与 QQ 平台来源。工作台编辑绑定时可以直接设置这些字段。
 
-**无法访问 Ooptra VOICE_API**  
-先跑 `/语音自检`。查 Ooptra 是否启动、`api_base`/`api_token` 是否一致、防火墙，以及**系统代理**（本插件已固定 `trust_env=False`，不受代理影响，但防火墙/端口仍可能拦）。
+## 排查问题
 
-**`/语音自检` 里 `❌ GET /voice/channels`**  
-Ooptra 版本低于 2.0.0，或 `api_base` 指向了别的服务。升级 Ooptra 到 2.0.0+ 即可。
+- **无法连接 Ooptra**：核对服务地址、控制台密码和防火墙；先运行 `/语音自检`。
+- **同步未接管**：核对开关、实际房间绑定与 QQ 平台实例，保存后刷新语音上下文。
+- **多个记忆插件**：手选一个主插件，避免同一轮重复写入不同记忆库。
+- **没有找到记忆**：检查群作用域、QQ 群人格、白名单和采集设置；空检索结果不证明没有历史记录。
+- **暂时断线**：当前会话可保留已加载人格，记忆查询会明确失败；语音采集进入 Ooptra 本地待写队列，重连后重试。
+- **普通聊天未立即变成长期记忆**：先区分“对话已采集”与“长期记忆已生成”；后者由记忆插件的总结策略决定。
 
-**`/进语音` 提示「默认频道不属于本群绑定的域」**  
-本群绑的域和 Ooptra 里「设为默认」的域不是同一个（多域群常见）。用 `/进语音 <频道名>` 指定，或 `/语音绑定 <域ID> <频道ID>` 绑到本域的频道。
+开发、协议和验证边界见 [同步开发说明](docs/context-sync.md)，版本变化见 [CHANGELOG](CHANGELOG.md)。本地自动化验证不等于真实 QQ 群和 Oopz 语音房验收。
 
-**鉴权失败 / 401**  
-`api_token` 要和 Ooptra 侧生效的令牌一致：默认是 Web 控制台的 `WEBUI_CONFIG.token`；若单独启用了 `VOICE_API_CONFIG`（独立端口），则是 `VOICE_API_CONFIG.token`。
-新版 WebUI 要求设置控制台密码，密码与插件 Token 共用；留空时需按控制台提示完成首次设置。
-旧版服务或独立 VOICE_API 是否允许空令牌由对应版本的服务配置决定。
+## 许可
 
-**群 xxx 未绑定 Oopz 频道**  
-管理员：`/语音绑定 <域ID> [频道ID] [备注]`。域 ID / 频道 ID 可在 Ooptra 控制台「语音台 → 会话控制」页查看并一键复制。
-
-**提示仅允许进入绑定频道**  
-更新绑定，或由管理员 `/进语音 <频道ID>`，或打开 `allow_arbitrary_channel`。
-
-**进房后听不到说话**  
-进房与推流由 [Ooptra](https://github.com/Eason4869/Ooptra) 负责，见其日志/控制台。
-
----
-
-## 相关项目
-
-| 项目 | 说明 |
-|------|------|
-| **[Ooptra](https://github.com/Eason4869/Ooptra)** | 配套项目，推荐一起用 |
-| [Oopzbot](https://github.com/tangqingfeng7/Oopzbot) | 社区 Oopz 机器人 |
-| [AstrBot](https://github.com/AstrBotDevs/AstrBot) | 多平台机器人框架 |
-| [OneBot v11](https://github.com/botuniverse/onebot-11) | 协议 |
-
----
-
-## 使用边界
-
-请只在自己的账号与有权管理的社群中使用。与 Oopz / 小米 / AstrBot 官方无隶属关系，MIT 许可，不作担保。
-
-## License
-
-[MIT](./LICENSE)
+[MIT](LICENSE)。本插件是第三方适配工具，与 Oopz 官方无隶属关系。

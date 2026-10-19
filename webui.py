@@ -13,6 +13,7 @@ from .ooptra_client import (
     looks_like_id,
     normalize_backend,
     resolve_group_mapping,
+    validate_binding_overlap,
 )
 
 # Deployed frontend code still calls only reviewed routes on the configured instance.
@@ -20,14 +21,14 @@ CONSOLE_ROUTES = {
     "GET": {"/api/auth/status", "/api/status", "/api/credentials", "/api/update", "/api/logs", "/api/logs/tail",
             "/api/config", "/api/login/browser", "/api/voice/status", "/api/voice/members",
             "/api/oopz/areas", "/api/oopz/channels", "/api/persona", "/api/memory", "/api/voice/auto-visit",
-            "/api/voice/preview/prompts", "/api/maintenance", "/api/maintenance/preflight", "/api/maintenance/storage"},
+            "/api/voice/preview/prompts", "/api/voice/astrbot/bindings", "/api/maintenance", "/api/maintenance/preflight", "/api/maintenance/storage"},
     "POST": {"/api/auth/login", "/api/auth/setup", "/api/auth/logout",
              "/api/config", "/api/login/browser", "/api/login/browser/cancel", "/api/login/api",
              "/api/bridge/restart", "/api/voice/join", "/api/voice/leave", "/api/voice/speak",
              "/api/voice/auto-visit/config", "/api/voice/auto-visit/pause", "/api/voice/auto-visit/resume",
              "/api/voice/diagnostics", "/api/voice/preview", "/api/maintenance/check",
              "/api/maintenance/backups", "/api/maintenance/update", "/api/maintenance/restore",
-             "/api/maintenance/network/test", "/api/maintenance/cleanup/preview", "/api/maintenance/cleanup/apply"},
+             "/api/maintenance/network/test", "/api/voice/astrbot/bindings", "/api/voice/astrbot/refresh", "/api/maintenance/cleanup/preview", "/api/maintenance/cleanup/apply"},
     "PUT": {"/api/persona"},
     "DELETE": {"/api/memory"},
 }
@@ -80,14 +81,18 @@ class ControlPanel:
         config = self.plugin.config
         mappings = config.get("group_map") or {}
         bindings = []
-        for key in mappings:
+        for key in dict.fromkeys(str(item) for item in mappings):
             row = resolve_group_mapping(mappings, str(key))
-            bindings.append({"group_id": str(key), **(row or {"area": "", "areas": [], "channel": "", "label": ""})})
-        return {"bindings": bindings, "allow_join": bool(config.get("allow_join", True))}
+            value = mappings.get(key, mappings.get(int(key) if key.isdigit() else key))
+            raw = value if isinstance(value, dict) else {}
+            bindings.append({"group_id": str(key), **(row or {"area": "", "areas": [], "channel": "", "label": ""}),
+                             "persona_id": raw.get("persona_id", ""), "platform_id": raw.get("platform_id", "")})
+        return {"bindings": bindings, "allow_join": bool(config.get("allow_join", True)),
+                "context_sync": self.plugin.context_sync.describe()}
 
     async def status(self) -> dict:
         data = await self.plugin.client.status()
-        fields = ("ok", "joined", "enabled", "backend", "area", "channel", "state", "default_area", "default_channel", "auto_visit")
+        fields = ("ok", "joined", "enabled", "backend", "area", "channel", "state", "default_area", "default_channel", "auto_visit", "astrbot_context")
         return {key: data[key] for key in fields if key in data}
 
     async def areas(self) -> dict:
@@ -111,20 +116,65 @@ class ControlPanel:
         label = body.get("label", "")
         if not isinstance(label, str) or len(label) > 80:
             raise ValueError("备注不能超过 80 个字。")
+        persona = body.get("persona_id")
+        platform = body.get("platform_id")
+        for selection in (persona, platform):
+            if selection is not None and (not isinstance(selection, str) or len(selection) > 160):
+                raise ValueError("人格或平台 ID 格式不正确。")
+        if channel:
+            for area in areas:
+                await self._verify_channel(area, channel)
 
         def mutate(mappings):
             self.ensure_active()
+            validate_binding_overlap(mappings, group, areas, channel)
             old = mappings.get(group, mappings.get(int(group)))
             row = dict(old) if isinstance(old, dict) else {}
             row.pop("area", None)
             row.pop("areas", None)
             row.update({"channel": channel, "label": label.strip()})
+            if persona is not None:
+                row["persona_id"] = persona
+            if platform is not None:
+                row["platform_id"] = platform
             row["areas" if len(areas) > 1 else "area"] = areas if len(areas) > 1 else areas[0]
             mappings.pop(int(group), None)
             mappings[group] = row
 
         await self.plugin._mutate_group_map(mutate)
         return {"ok": True, "message": "群绑定已保存。", **self.bootstrap()}
+
+    async def context_settings(self, value: Any) -> dict:
+        self.ensure_active()
+        body = _object(value)
+        if body.get("action") == "refresh":
+            return await self.plugin.client.context_refresh()
+        enabled = body.get("enabled")
+        if not isinstance(enabled, bool):
+            raise ValueError("同步开关必须为布尔值。")
+        persona = body.get("persona_id", "")
+        provider = body.get("memory_provider", "auto")
+        if not isinstance(persona, str) or len(persona) > 160:
+            raise ValueError("人格 ID 格式不正确。")
+        if provider not in {"auto", "none", "memory_companion", "livingmemory"}:
+            raise ValueError("不支持的记忆插件。")
+        changes = {"context_sync_enabled": enabled, "context_persona_id": persona,
+                   "context_memory_provider": provider}
+        async with self.plugin._map_lock:
+            self.ensure_active()
+            old = {key: self.plugin.config.get(key) for key in changes}
+            self.plugin.config.update(changes)
+            try:
+                self.plugin.config.save_config()
+            except Exception:
+                for key, previous in old.items():
+                    if previous is None:
+                        self.plugin.config.pop(key, None)
+                    else:
+                        self.plugin.config[key] = previous
+                raise
+        return {"ok": True, "message": "配置已保存；下次进房生效，当前房间可点击刷新上下文。",
+                **self.bootstrap()}
 
     async def delete_binding(self, value: Any) -> dict:
         self.ensure_active()
@@ -277,12 +327,13 @@ class ControlPanel:
             return (await self.action(action))["result"]
         if method == "GET":
             kwargs = {"timeout_sec": max(self.plugin.client.timeout, 20)} if path in {
-                "/api/maintenance/preflight", "/api/maintenance/storage"} else {}
+                "/api/maintenance/preflight", "/api/maintenance/storage", "/api/voice/astrbot/bindings"} else {}
             return await self.plugin.client._request(method, path, params=params, **kwargs)
         # Serialize console writes, but preserve config-save + immediate reconnect.
         # Voice changes share the command cooldown; account/persona/reconnect do not.
         updates = payload.get("updates", {})
-        independent = path in {"/api/voice/preview", "/api/voice/diagnostics"}
+        independent = path in {"/api/voice/preview", "/api/voice/diagnostics",
+                               "/api/voice/astrbot/bindings", "/api/voice/astrbot/refresh"}
         if independent:
             # Isolated browser previews do not mutate the room or command cooldown.
             return _confirmed(await self.plugin.client._request(method, path, params=params, json_body=payload,

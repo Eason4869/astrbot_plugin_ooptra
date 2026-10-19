@@ -56,6 +56,18 @@
         </article>
       </div>
       <article class="card members-card"><header class="card-head"><h3>房间成员</h3><span class="chip" id="member-count">未选择频道</span><button class="btn subtle sm" id="refresh-members" type="button">刷新成员</button></header><div class="table-wrap"><table class="table"><thead><tr><th>成员</th><th>麦克风</th><th>听音</th></tr></thead><tbody id="members"><tr><td colspan="3" class="empty">选择语音频道后查看房间成员。</td></tr></tbody></table></div><p class="hint members-note">未收到静音状态时显示“未知”。</p></article>
+      <article class="card members-card" aria-label="人格与双向记忆">
+        <header class="card-head"><h3>人格与双向记忆</h3><span class="chip" id="context-chip">未启用</span></header>
+        <p class="hint" id="context-detail" role="status">跟随当前语音频道与 QQ 群的绑定。</p>
+        <div class="target-fields">
+          <label class="field"><span>同步开关</span><select id="context-enabled"><option value="false">关闭，使用 Ooptra 本地设置</option><option value="true">开启，使用绑定 QQ 群</option></select></label>
+          <label class="field"><span>AstrBot 人格</span><select id="context-persona"><option value="">跟随绑定 QQ 群当前人格</option></select></label>
+          <label class="field"><span>主记忆插件</span><select id="context-provider"><option value="auto">自动识别</option><option value="none">只同步人格</option></select></label>
+        </div>
+        <p class="hint" id="context-provider-detail"></p>
+        <div class="action-row"><button type="button" class="btn primary" id="save-context">保存同步配置</button><button type="button" class="btn ghost" id="refresh-context">刷新当前语音上下文</button></div>
+        <p class="scope-note">刷新会重建当前模型会话。普通语音进入记忆插件的采集与总结流程，明确的“记住”请求等待写入确认。成员 QQ 关联与多 QQ 实例选择可在插件配置中设置。</p>
+      </article>
     </section>
     <section id="view-bindings" aria-label="群绑定" hidden>
       <article class="card"><header class="card-head"><div><h3>QQ 群 ↔ Oopz 域 / 频道</h3><p class="hint">保存后立即用于 QQ 命令；支持一个群绑定多个域。</p></div><button class="btn primary" id="add-binding" type="button">添加群绑定</button></header><input class="control binding-search" id="binding-search" aria-label="搜索群绑定" placeholder="搜索群号、备注或域 ID" /><div class="table-wrap"><table class="table binding-table"><thead><tr><th>QQ 群 / 备注</th><th>Oopz 域</th><th>默认频道</th><th>操作</th></tr></thead><tbody id="bindings"></tbody></table></div><p class="scope-note">一群绑定多个域时，按 Ooptra 的默认域择一；未设置默认域时使用第一个。只填写域时，进房还需要该域的默认频道。</p></article>
@@ -71,6 +83,8 @@
     <div class="action-row area-helper"><select class="control grow" id="binding-area-choice" aria-label="从已连接域中选择"><option value="">从域列表添加…</option></select><button class="btn ghost sm" id="add-binding-area" type="button">添加这个域</button></div>
     <label class="field"><span>默认频道 ID（可选）</span><input id="binding-channel" name="channel" placeholder="留空时使用这个域的 Ooptra 默认频道" /></label>
     <label class="field"><span>备注（可选）</span><input id="binding-label" name="label" maxlength="80" placeholder="例如开黑群" /></label>
+    <label class="field"><span>这个群的语音人格（可选）</span><select id="binding-persona"><option value="">使用默认同步规则</option></select></label>
+    <label class="field"><span>QQ 平台 ID（多个 QQ 实例时填写）</span><input id="binding-platform" maxlength="160" placeholder="留空时自动选择唯一 QQ 实例" /></label>
     <p class="form-error" id="binding-error" role="alert" hidden></p><div class="dialog-actions"><button class="btn ghost" id="cancel-binding" type="button">取消</button><button class="btn primary" id="save-binding" type="submit">保存绑定</button></div>
   </form>
 </dialog>

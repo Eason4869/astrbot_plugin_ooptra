@@ -1,6 +1,6 @@
 name: astrbot_plugin_ooptra
 display_name: Oopz 语音桥
-short_desc: Ooptra 可视化工作台，QQ 查人数与一键进退语音房
+short_desc: Ooptra 语音工作台，QQ 群人格与双向记忆同步
 desc: |
   **Ooptra 配套插件**，在 QQ 查询 / 管理 Oopz 语音频道。
 
@@ -14,8 +14,8 @@ desc: |
   - `/语音绑定` 管理 QQ 群 ↔ Oopz 域/频道映射
   - 可选 LLM 工具，模型可自行查/控语音
 
-  需配合 [Ooptra](https://github.com/Eason4869/Ooptra) **3.0 及以上版本（≥ 3.0.0）** 的 VOICE_API 使用。
-version: 1.2.4
+  需配合 [Ooptra](https://github.com/Eason4869/Ooptra) **261019.1-dev 及以上版本（上下文协议 v1）** 的 VOICE_API 使用。
+version: 1.3.0-dev
 author: Eason4869
 repo: https://github.com/Eason4869/astrbot_plugin_ooptra
 homepage: https://github.com/Eason4869/astrbot_plugin_ooptra

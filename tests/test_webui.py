@@ -10,10 +10,17 @@ from copy import deepcopy
 import httpx
 from test_main_logic import _plugin
 
-from ooptra_client import OoptraClient
+from ooptra_client import OoptraClient, OoptraError
 
 
 class TestControlPanel(unittest.IsolatedAsyncioTestCase):
+    async def test_overlapping_room_bindings_are_rejected_before_persistence(self):
+        self.config["group_map"] = {"123": {"area": "AREA-A", "channel": ""}}
+        with self.assertRaisesRegex(ValueError, "冲突"):
+            await self.panel.save_binding({"group_id": "456", "areas": ["AREA-A"],
+                "channel": "CHANNEL-A", "label": "other"})
+        self.assertNotIn("456", self.config["group_map"])
+
     def setUp(self):
         self.plugin, self.config = _plugin(api_token="server-only-secret")
         self.panel = getattr(self.plugin, "panel", None)
@@ -65,6 +72,11 @@ class TestControlPanel(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.config["group_map"], {})
         self.assertEqual(self.config.saved, 0)
 
+    async def test_binding_rejects_channel_from_another_area(self):
+        with self.assertRaisesRegex(ValueError, "不属于"):
+            await self.panel.save_binding({"group_id": "123456", "areas": ["AREA-A"], "channel": "CHANNEL-B"})
+        self.assertEqual(self.config.saved, 0)
+
     async def test_unbind_removes_legacy_integer_key_only_for_target_group(self):
         self.config["group_map"] = {123456: "AREA-A:CHANNEL-A", "654321": "AREA-B:CHANNEL-B"}
         await self.panel.delete_binding({"group_id": "123456"})
@@ -79,7 +91,7 @@ class TestControlPanel(unittest.IsolatedAsyncioTestCase):
 
         self.config.save_config = fail
         with self.assertRaises(OSError):
-            await self.panel.save_binding({"group_id": "123456", "areas": ["AREA-B"], "channel": "new"})
+            await self.panel.save_binding({"group_id": "123456", "areas": ["AREA-B"], "channel": "CHANNEL-A"})
         self.assertEqual(self.config["group_map"], before)
 
     async def test_concurrent_binding_updates_preserve_both_groups(self):
@@ -119,7 +131,7 @@ class TestControlPanel(unittest.IsolatedAsyncioTestCase):
 
     async def test_failed_voice_response_never_reports_success(self):
         self.responses["/voice/join"] = {"ok": False, "error": "join failed"}
-        with self.assertRaises(Exception):
+        with self.assertRaises(OoptraError):
             await self.panel.action({"action": "join", "area": "AREA-A", "channel": "CHANNEL-A"})
         self.assertIsNone(self.plugin._check_voice_cooldown())
 
@@ -215,6 +227,8 @@ class TestControlPanel(unittest.IsolatedAsyncioTestCase):
 
     async def test_new_console_routes_preserve_methods_and_query(self):
         for method, path, params in (("GET", "/api/voice/preview/prompts", {"kind": "enter", "area": "AREA-A"}),
+                                     ("GET", "/api/voice/astrbot/bindings", {}),
+                                     ("POST", "/api/voice/astrbot/bindings", {}),
                                      ("GET", "/api/maintenance", {}),
                                      ("POST", "/api/maintenance/check", {}),
                                      ("POST", "/api/maintenance/backups", {}),

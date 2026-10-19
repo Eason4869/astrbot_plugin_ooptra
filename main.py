@@ -15,12 +15,14 @@ from __future__ import annotations
 
 import asyncio
 import time
+from pathlib import Path
 from typing import Any
 
 from astrbot.api import AstrBotConfig, logger
 from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star
 
+from .context_sync import ContextSync
 from .ooptra_client import (
     BACKEND_LABELS,
     OoptraClient,
@@ -34,6 +36,7 @@ from .ooptra_client import (
     normalize_backend,
     resolve_channel,
     resolve_group_mapping,
+    validate_binding_overlap,
 )
 from .web_routes import register_panel, unregister_panel
 from .webui import ControlPanel
@@ -54,7 +57,21 @@ class OoptraPlugin(Star):
         self._webui_handlers = set()
         self._webui_stream_tasks = set()
         self.panel = ControlPanel(self)
+        self.context_sync = ContextSync(self)
         register_panel(self)
+
+    async def initialize(self):
+        from astrbot.api.star import StarTools
+
+        from .sync_state import SyncState
+
+        self.context_sync.state.close()
+        self.context_sync.state = SyncState(Path(StarTools.get_data_dir("astrbot_plugin_ooptra")) / "voice_context.sqlite3")
+        self.context_sync.start()
+
+    @filter.on_llm_request()
+    async def observe_qq_context(self, event: AstrMessageEvent, req):
+        self.context_sync.observe(event)
 
     # ---------- 基础设施 ----------
 
@@ -263,11 +280,13 @@ class OoptraPlugin(Star):
             return
 
         def mutate(group_map: dict[str, Any]) -> None:
-            group_map[str(group_id)] = {
-                "area": area,
-                "channel": channel,
-                "label": label,
-            }
+            validate_binding_overlap(group_map, str(group_id), [area], channel)
+            previous = group_map.get(str(group_id), group_map.get(int(group_id)))
+            row = dict(previous) if isinstance(previous, dict) else {}
+            row.pop("areas", None)
+            row.update(area=area, channel=channel, label=label)
+            group_map.pop(int(group_id), None)
+            group_map[str(group_id)] = row
 
         try:
             await self._mutate_group_map(mutate)
@@ -387,6 +406,8 @@ class OoptraPlugin(Star):
     @filter.command("进语音", alias={"加入语音", "voice_join"})
     async def voice_join(self, event: AstrMessageEvent, channel: str = ""):
         """让 Bot 进入本群默认频道；也可 /进语音 <频道名或频道ID> 指定其他频道。"""
+        if callable(getattr(event, "get_platform_name", None)):
+            self.context_sync.observe(event)
         if not self._can_control_voice(event):
             yield event.plain_result("当前不允许进语音（见插件配置 allow_join / join_admin_only）。")
             return
@@ -785,6 +806,7 @@ class OoptraPlugin(Star):
     async def terminate(self):
         """插件卸载/停用时调用。"""
         self._webui_active = False
+        await self.context_sync.stop()
         await unregister_panel(self)
         # Drain in-flight writes; queued panel writes recheck the lifecycle flag.
         async with self._voice_op_lock:

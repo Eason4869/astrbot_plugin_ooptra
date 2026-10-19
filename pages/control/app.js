@@ -82,9 +82,39 @@ function renderBindings() {
 function applyBootstrap(data) {
   state.bindings = data.bindings;
   state.allowJoin = data.allow_join;
+  renderContext(data.context_sync || {});
   setOptions($('group-preset'), state.bindings.map(row => ({id: row.group_id, name: `${row.label || 'QQ 群'} · ${row.group_id}`})), '手动选择房间');
   renderBindings();
   buttons();
+}
+function renderContext(data) {
+  state.context = data;
+  setOptions($('context-persona'), data.personas || [], '跟随绑定 QQ 群当前人格');
+  setOptions($('binding-persona'), data.personas || [], '使用默认同步规则');
+  $('context-enabled').value = String(data.enabled === true);
+  if (data.persona_id && !Array.from($('context-persona').options).some(o => o.value === data.persona_id)) {
+    $('context-persona').add(new Option(`已不可用：${data.persona_id}`, data.persona_id));
+  }
+  $('context-persona').value = data.persona_id || '';
+  const provider = $('context-provider');
+  provider.replaceChildren(new Option('自动识别', 'auto'), new Option('只同步人格', 'none'));
+  (data.providers || []).forEach(row => provider.add(new Option(`${row.name} ${row.version}${row.available ? '' : '（接口未就绪）'}`, row.id)));
+  if (data.memory_provider && !Array.from(provider.options).some(o => o.value === data.memory_provider)) provider.add(new Option(`未启用：${data.memory_provider}`, data.memory_provider));
+  provider.value = data.memory_provider || 'auto';
+  $('context-provider-detail').textContent = data.memory_error || '已识别记忆插件，语音使用相同的记忆来源。';
+  $('context-chip').textContent = data.enabled ? '等待语音上下文' : '未启用';
+}
+async function saveContext(refresh = false) {
+  const button = $(refresh ? 'refresh-context' : 'save-context');
+  button.disabled = true;
+  try {
+    const payload = refresh ? {action: 'refresh'} : {enabled: $('context-enabled').value === 'true', persona_id: $('context-persona').value, memory_provider: $('context-provider').value};
+    const result = await bridge.apiPost('ui/context', payload);
+    if (!refresh) applyBootstrap(result);
+    feedback(result.message || '当前语音上下文已刷新，请查看生效状态。');
+    await refreshStatus();
+  } catch (error) {feedback(error.message, 'err');}
+  finally {button.disabled = false;}
 }
 async function loadBootstrap() {
   applyBootstrap(await bridge.apiGet('ui/bootstrap'));
@@ -109,6 +139,11 @@ async function refreshStatus() {
   buttons();
   try {
     const data = await bridge.apiGet('ui/status');
+    const context = data.astrbot_context;
+    if (context) {
+      $('context-chip').textContent = context.active ? '已接入' : (context.state === 'offline' ? '桥接未连接' : '使用本地设置');
+      $('context-detail').textContent = [context.group_id ? `QQ 群 ${context.group_id}` : '尚未确定绑定来源', context.persona_id ? `人格 ${context.persona_id}` : '', context.provider ? `记忆 ${context.provider}` : '未接入记忆', `待写入 ${context.pending_writes || 0} 条`, context.error || ''].filter(Boolean).join(' · ');
+    }
     const backendChanged = state.status?.backend !== data.backend;
     state.status = data;
     connection(true, data.joined ? '语音会话正在运行，房间操作会应用到当前实例。' : '语音会话尚未进房，可以选择频道后进入。');
@@ -249,6 +284,8 @@ function editBinding(row = null) {
   $('binding-areas').value = row?.areas.join('\n') || '';
   $('binding-channel').value = row?.channel || '';
   $('binding-label').value = row?.label || '';
+  $('binding-persona').value = row?.persona_id || '';
+  $('binding-platform').value = row?.platform_id || '';
   $('binding-error').hidden = true;
   $('binding-dialog').showModal();
   (row ? $('binding-areas') : $('binding-group')).focus();
@@ -260,7 +297,7 @@ async function saveBinding(event) {
   $('binding-error').hidden = true;
   try {
     const result = await bridge.apiPost('ui/binding', {group_id: $('binding-group').value.trim(),
-      areas: $('binding-areas').value.split(/[\s,、]+/u).filter(Boolean), channel: $('binding-channel').value.trim(), label: $('binding-label').value.trim()});
+      areas: $('binding-areas').value.split(/[\s,、]+/u).filter(Boolean), channel: $('binding-channel').value.trim(), label: $('binding-label').value.trim(), persona_id: $('binding-persona').value, platform_id: $('binding-platform').value.trim()});
     applyBootstrap(result);
     $('binding-dialog').close();
     feedback(result.message);
@@ -324,6 +361,8 @@ async function start() {
   $('join').addEventListener('click', () => operate({action: 'join', area: state.area, channel: state.channel}));
   $('leave').addEventListener('click', () => operate({action: 'leave'}));
   $('switch-backend').addEventListener('click', () => operate({action: 'backend', backend: $('backend-select').value}));
+  $('save-context').addEventListener('click', () => saveContext());
+  $('refresh-context').addEventListener('click', () => saveContext(true));
   $('visit-on').addEventListener('click', () => operate({action: 'auto_visit', area: state.area, enabled: true}));
   $('visit-off').addEventListener('click', () => operate({action: 'auto_visit', area: state.area, enabled: false}));
   await loadBootstrap();

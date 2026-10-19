@@ -51,6 +51,7 @@ def _install_fake_astrbot() -> None:
         command=decorator,
         llm_tool=decorator,
         permission_type=decorator,
+        on_llm_request=decorator,
     )
 
     star = types.ModuleType("astrbot.api.star")
@@ -233,6 +234,15 @@ def _run_first(gen: Any) -> Any:
 
 
 class TestCrossAreaGuard(unittest.TestCase):
+    def test_binding_command_preserves_persona_and_normalizes_legacy_key(self) -> None:
+        plugin, config = _plugin(group_map={123456: {"area": "OLD", "areas": ["OLD"],
+            "persona_id": "chosen", "platform_id": "qq-main", "extra": "keep"}})
+        result = _run_first(plugin.voice_bind(FakeEvent(), "AREA-A", "CHANNEL-A", "new"))
+        self.assertIn("已绑定", result)
+        self.assertNotIn(123456, config["group_map"])
+        self.assertEqual(config["group_map"]["123456"], {"area": "AREA-A", "channel": "CHANNEL-A",
+            "label": "new", "persona_id": "chosen", "platform_id": "qq-main", "extra": "keep"})
+
     def test_default_channel_is_dropped_when_area_differs(self) -> None:
         plugin, _ = _plugin(group_map={"123456": {"area": "AREA-B"}})
         _attach(
