@@ -15,7 +15,7 @@ desc: |
   - 可选 LLM 工具，模型可自行查/控语音
 
   需配合 [Ooptra](https://github.com/Eason4869/Ooptra) **261019-dev 及以上版本（上下文协议 v1；对应预设正式版 4.0.0）** 的 VOICE_API 使用。
-version: 2.0.0
+version: 2.0.1
 author: Eason4869
 repo: https://github.com/Eason4869/astrbot_plugin_ooptra
 homepage: https://github.com/Eason4869/astrbot_plugin_ooptra

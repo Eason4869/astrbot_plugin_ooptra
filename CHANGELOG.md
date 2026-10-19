@@ -2,6 +2,13 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号尽量符合 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [2.0.1] - 2026-10-20
+
+### Fixed
+
+- 上下文同步改用 `from astrbot.api import logger`，移除运行时代码中的 Python 内置 `logging`，符合 AstrBot 插件日志规范。
+- 同步调整异常告警格式，继续仅记录异常类型，避免输出第三方异常正文。
+
 ## [2.0.0] - 2026-10-19
 
 ### Version
@@ -209,6 +216,7 @@
 - QQ 指令：语音状态/进退语音/绑定解绑/自检/帮助
 - LLM 工具与 VOICE_API 客户端、mock、基础单测
 
+[2.0.1]: https://github.com/Eason4869/astrbot_plugin_ooptra/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/Eason4869/astrbot_plugin_ooptra/compare/v1.2.4...v2.0.0
 [1.2.4]: https://github.com/Eason4869/astrbot_plugin_ooptra/compare/v1.2.3...v1.2.4
 [1.2.3]: https://github.com/Eason4869/astrbot_plugin_ooptra/compare/v1.2.2...v1.2.3

@@ -5,16 +5,15 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
-import logging
 import uuid
 from pathlib import Path
+
+from astrbot.api import logger
 
 from .ooptra_client import resolve_group_mapping
 from .session_sources import parse_umo, select_source
 from .sync_state import SyncState
 from .voice_memory import MemoryUnavailable, discover
-
-logger = logging.getLogger(__name__)
 
 
 class ContextSync:
@@ -391,7 +390,7 @@ class ContextSync:
             result = await asyncio.wait_for(self.handle(event),
                 18 if event.get("operation") in {"bindings", "commit", "remember"} else 3)
         except Exception as exc:
-            logger.warning("Ooptra memory operation failed: %s", type(exc).__name__)
+            logger.warning(f"Ooptra memory operation failed: {type(exc).__name__}")
             result = {"ok": False, "retry": event.get("operation") in {"commit", "remember"},
                       "error": "记忆插件执行超时或失败"}
         self.error = "" if result.get("ok") is True else result.get("error", "")
