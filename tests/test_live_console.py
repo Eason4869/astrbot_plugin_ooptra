@@ -9,6 +9,21 @@ from ooptra_client import OoptraClient, OoptraError
 
 
 class TestLiveConsole(unittest.IsolatedAsyncioTestCase):
+    def test_deployed_router_uses_view_scoped_history_and_pathname(self):
+        from ooptra_plugin_under_test.live_console import adapt_script
+
+        source = ("let pageHistoryIndex = Number(history.state?.ooptraPageIndex) || 0;\n"
+                  "const path = location.pathname;\n"
+                  "history[replace ? 'replaceState' : 'pushState'](state, '', url);\n"
+                  "history.go(-1);\n"
+                  "const base = location.href;")
+        adapted, _ = adapt_script(source)
+        self.assertIn("window.OoptraPanel.history.state", adapted)
+        self.assertIn("window.OoptraPanel.location.pathname", adapted)
+        self.assertIn("window.OoptraPanel.history[replace", adapted)
+        self.assertIn("window.OoptraPanel.history.go(-1)", adapted)
+        self.assertIn("const base = window.OoptraPanel.location.href", adapted)
+
     async def asyncSetUp(self):
         self.plugin = _main().OoptraPlugin(None, FakeConfig(api_base="http://deployed:3090", api_token="backend-secret", group_map={}))
         self.requests = []

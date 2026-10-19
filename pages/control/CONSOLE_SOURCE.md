@@ -29,6 +29,11 @@ Explicit sandbox adaptations:
   External links display a selectable address.
 - A return link opens the plugin's voice/group-binding workbench. Initial theme
   follows AstrBot; the deployed theme script owns its toggle.
+- Native pathname/history navigation is adapted to hash routes inside the
+  existing plugin view URL. Its path, asset authentication and theme query stay
+  intact across console page switches and reloads. The return link is captured
+  from the initial view URL, so visiting `/voice` cannot redirect it to a missing
+  Dashboard `/index.html` route.
 
 The backend attaches the configured Ooptra token, accepts no destination URL
 from the browser, follows no redirects and fetches no external frontend resource.

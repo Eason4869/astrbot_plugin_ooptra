@@ -23,7 +23,7 @@
       mounted = true;
       for (const attribute of page.documentElement.attributes) document.documentElement.setAttribute(attribute.name, attribute.value);
       const back = document.createElement('a');
-      back.href = './index.html';
+      back.href = window.OoptraPanel.workbenchUrl;
       back.className = 'btn ghost';
       back.textContent = '返回插件工作台';
       (document.getElementById('page-tools')?.parentElement || document.body).prepend(back);
