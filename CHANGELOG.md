@@ -2,6 +2,34 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号尽量符合 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [2.0.0] - 2026-10-19
+
+### Version
+
+- 将 `dev` 分支合并至 `main`，正式发布 `2.0.0`，对应标签 `v2.0.0`。
+
+### Added
+
+- GitHub Actions CI：在 main／beta／dev 推送和 Pull Request 时，运行完整 Python 单元测试矩阵、Node 22 控制台适配器测试与前端脚本语法检查。
+- 独立开发依赖 requirements-dev.txt，包含 Web 路由测试所需 Quart，避免 CI 因缺少可选依赖而跳过测试；插件运行依赖保持不变。
+- 自动识别受支持的 Memory Companion / LivingMemory 实例，提供所选会话记忆检索、语音采集和明确记忆写入。
+- 完整 UMO 区分平台实例、群聊与私聊；一个域／频道可映射多个会话，控制权限与来源选择分离。
+- 人格来源单选并支持内置人格覆盖；记忆会话多选，查询全部所选会话并写回全部所选会话，每个目标保留自身人格过滤与回执；部分失败仅补写失败目标。
+- 两端共用会话编辑器，支持域默认／频道覆盖、私聊共享与写回确认、QQ 群／联系人／Oopz 文字频道选择及实际 WS 身份核对。
+- 工作台新增同步开关、人格／记忆插件选择、状态反馈和当前会话刷新。
+- 为 Ooptra「会话对应」页面提供配置管理桥接；保存时校验频道归属及来源覆盖，兼容历史键与扩展字段；旧唯一绑定可回退，显式空规则不回退。
+- 已确认写入的本地回执、断线重试及会话来源变化校验；不把公告、未播放或被打断的助手回复当成完整对话。
+
+### Compatibility
+
+- 需配合 Ooptra 261019-dev 及以上版本的上下文协议 v1 使用，对应预设正式版 4.0.0。
+- QQ 群／联系人和 Oopz 文字目录通过 aiocqhttp；其他平台可映射完整 UMO，实际记忆能力取决于所选插件支持。第三方记忆插件须保留适配器所需接口和授权。
+
+### Fixed
+
+- 私聊映射不通过旧绑定回退自动启用；完整 UMO 命令迁移／解绑清理旧数字映射，保留其他实例的映射。明确记住请求的部分失败沿用原 ID 后台补写，避免重复写入成功目标。
+- 修复打开完整 Ooptra 控制台、切换页面后返回插件工作台时白屏的问题。完整控制台的子页面改用插件视图内的片段路由，保留 AstrBot 页面路径、认证和主题参数；返回入口固定到原工作台，刷新及前进后退仍可正常使用。
+
 ## [1.2.4] - 2026-10-07
 
 ### Fixed
@@ -181,6 +209,7 @@
 - QQ 指令：语音状态/进退语音/绑定解绑/自检/帮助
 - LLM 工具与 VOICE_API 客户端、mock、基础单测
 
+[2.0.0]: https://github.com/Eason4869/astrbot_plugin_ooptra/compare/v1.2.4...v2.0.0
 [1.2.4]: https://github.com/Eason4869/astrbot_plugin_ooptra/compare/v1.2.3...v1.2.4
 [1.2.3]: https://github.com/Eason4869/astrbot_plugin_ooptra/compare/v1.2.2...v1.2.3
 [1.2.2]: https://github.com/Eason4869/astrbot_plugin_ooptra/compare/152af42...v1.2.2

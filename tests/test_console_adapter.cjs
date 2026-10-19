@@ -21,13 +21,49 @@ function adapter({pendingStream = false} = {}) {
     unsubscribeSSE: async id => {unsubscribed = id;},
     download: async (endpoint, params, filename) => {requests.push({endpoint, params, filename});},
   };
-  const window = {AstrBotPluginPage: bridge, addEventListener() {}};
+  const location = new URL('https://astrbot.example/prefix/views/ooptra/full.html?asset_token=test-token&theme=dark');
+  const historyCalls = [];
+  const history = {
+    state: null,
+    pushState(state, title, url) { this.state = state; location.href = new URL(url, location).href; historyCalls.push(['push', location.href]); },
+    replaceState(state, title, url) { this.state = state; location.href = new URL(url, location).href; historyCalls.push(['replace', location.href]); },
+    go(delta) { historyCalls.push(['go', delta]); },
+  };
+  const window = {AstrBotPluginPage: bridge, addEventListener() {}, location, history};
   const context = {window, document: {addEventListener() {}, documentElement: {dataset: {}}, querySelectorAll: () => []},
     URL, URLSearchParams, setTimeout, clearTimeout, console};
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../pages/control/console-adapter.js'), 'utf8'), context);
-  return {panel: window.OoptraPanel, requests, failBoot: () => {window.__ooptraBootFailed = true;}, handlers: () => streamHandlers,
+  return {panel: window.OoptraPanel, requests, location, historyCalls, failBoot: () => {window.__ooptraBootFailed = true;}, handlers: () => streamHandlers,
     resolveStream: () => resolveStream('sse-1'), unsubscribed: () => unsubscribed};
 }
+
+test('console routes stay inside the plugin view and retain asset authentication', () => {
+  const a = adapter();
+  const overview = new URL(a.panel.location.href);
+  overview.pathname = '/overview';
+  a.panel.history.replaceState({ooptraPageIndex: 0}, '', overview);
+  const voice = new URL(a.panel.location.href);
+  voice.pathname = '/voice';
+  a.panel.history.pushState({ooptraPageIndex: 1}, '', voice);
+  assert.equal(a.location.pathname, '/prefix/views/ooptra/full.html');
+  assert.equal(a.location.searchParams.get('asset_token'), 'test-token');
+  assert.equal(a.location.searchParams.get('theme'), 'dark');
+  assert.equal(a.location.hash, '#/voice');
+  assert.equal(a.panel.location.pathname, '/voice');
+  assert.equal(new URL(a.panel.location.href).pathname, '/voice');
+  assert.equal(new URL(a.panel.location.href).hash, '');
+  assert.equal(a.panel.history.state.ooptraPageIndex, 1);
+  assert.equal(a.panel.workbenchUrl, '/prefix/views/ooptra/index.html?asset_token=test-token&theme=dark');
+  a.panel.history.go(-1);
+  assert.deepEqual(a.historyCalls.at(-1), ['go', -1]);
+});
+
+test('reloaded console reads its hash route and legacy views still default to overview', () => {
+  const a = adapter();
+  assert.equal(a.panel.location.pathname, '/prefix/views/ooptra/full.html');
+  a.location.hash = '/config';
+  assert.equal(a.panel.location.pathname, '/config');
+});
 
 test('full console calls bridge with parsed params, never direct fetch or browser token', async () => {
   const a = adapter();

@@ -4,6 +4,33 @@
   const bridge = window.AstrBotPluginView || window.AstrBotPluginPage;
   const values = new Map();
   const logSources = new Set();
+  // The host owns this pathname and its asset-token query. Console routes may
+  // change only the hash, otherwise reload/return leave AstrBot's plugin view.
+  const viewUrl = new URL(window.location.href);
+  const workbenchUrl = new URL('./index.html', viewUrl);
+  workbenchUrl.search = viewUrl.search;
+  function writeViewHistory(method, state, title, url) {
+    const target = new URL(viewUrl);
+    const requested = new URL(url, window.location.href);
+    target.search = requested.search;
+    target.hash = requested.pathname === viewUrl.pathname ? requested.hash : requested.pathname;
+    window.history[method](state, title, target.pathname + target.search + target.hash);
+  }
+  const viewHistory = {
+    get state() { return window.history.state; },
+    pushState: (state, title, url) => writeViewHistory('pushState', state, title, url),
+    replaceState: (state, title, url) => writeViewHistory('replaceState', state, title, url),
+    go: delta => window.history.go(delta),
+  };
+  const viewLocation = {
+    get pathname() { return window.location.hash.startsWith('#/') ? window.location.hash.slice(1) : viewUrl.pathname; },
+    get href() {
+      const url = new URL(window.location.href);
+      url.pathname = this.pathname;
+      url.hash = '';
+      return url.href;
+    },
+  };
   function ensureRunning() {
     if (window.__ooptraBootFailed) throw new Error('部署中的控制台初始化失败，请刷新重试。');
   }
@@ -136,6 +163,7 @@
   }
 
   window.OoptraPanel = {api, storage, EventSource: LogSource, openLink, downloadBackup,
+    history: viewHistory, location: viewLocation, workbenchUrl: workbenchUrl.pathname + workbenchUrl.search,
     stop: () => {window.__ooptraBootFailed = true; [...logSources].forEach(source => source.close());}};
   document.addEventListener('DOMContentLoaded', () => {
     if (document.getElementById('console-load-title')) return;

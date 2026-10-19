@@ -121,7 +121,8 @@ def register_panel(plugin: Any) -> None:
                             ("channels", channels), ("members", members), ("console-page", console_page)):
         route(name, "GET", operation)
     for name, operation in (("action", panel.action), ("binding", panel.save_binding),
-                            ("unbind", panel.delete_binding), ("console", panel.console)):
+                            ("unbind", panel.delete_binding), ("console", panel.console),
+                            ("context", panel.context_settings), ("sources", panel.sources)):
         route(name, "POST", operation)
 
     async def logs():

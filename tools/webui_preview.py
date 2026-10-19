@@ -60,7 +60,7 @@ def load_page_renderer(source: Path):
     return namespace["PluginPageService"]()
 
 
-def build_app(astrbot_source: Path):
+def build_app(astrbot_source: Path, ooptra_source: Path | None = None):
     renderer = load_page_renderer(astrbot_source / "astrbot/dashboard/services/plugin_page_service.py")
     main = _main()  # Substitute only AstrBot's non-web plugin runtime.
     for name in ("astrbot.core", "astrbot.core.utils"):
@@ -75,6 +75,25 @@ def build_app(astrbot_source: Path):
     routes = {}
 
     class Context:
+        persona_manager = types.SimpleNamespace(personas_v3=[
+            {"name": "群聊助手", "prompt": "自然聊天"},
+            {"name": "游戏搭子", "prompt": "简洁友好"}])
+
+        def __init__(self):
+            def platform(identifier, bot):
+                async def call_action(*, action):
+                    if action == "get_login_info":
+                        return {"user_id": bot}
+                    if action == "get_group_list":
+                        return [{"group_id": 123456789, "group_name": "开黑群"}, {"group_id": 987654321, "group_name": "多域交流群"}]
+                    return [{"user_id": 456, "nickname": "演示联系人"}]
+                return types.SimpleNamespace(meta=lambda: types.SimpleNamespace(id=identifier, name="aiocqhttp"),
+                    get_client=lambda: types.SimpleNamespace(call_action=call_action))
+            self.platform_manager = types.SimpleNamespace(get_insts=lambda: [platform("QQ", "42"), platform("OopzWS", "99")])
+
+        def get_all_stars(self):
+            return []
+
         def register_web_api(self, route, handler, methods, desc):
             for method in methods:
                 routes[(method, route)] = handler
@@ -87,7 +106,7 @@ def build_app(astrbot_source: Path):
             destination.write_text(json.dumps(self, ensure_ascii=False), encoding="utf-8")
 
     config = PreviewConfig(api_base="http://preview.invalid", api_token="preview-server-only-token", timeout_sec=8,
-        group_map={"123456789": {"area": "demo-area", "channel": "demo-channel", "label": "开黑群"},
+        group_map={"QQ:GroupMessage:123456789": {"area": "demo-area", "channel": "", "label": "开黑群", "kind": "qq"},
                    "987654321": {"areas": ["demo-area", "demo-area-2"], "channel": "", "label": "多域交流群"}})
     plugin = main.OoptraPlugin(Context(), config)
     state = {"ok": True, "joined": True, "enabled": True, "backend": "gemini_live", "state": "listening",
@@ -95,13 +114,13 @@ def build_app(astrbot_source: Path):
     calls = []
     failure = {"offline": False}
     deployed = {"version": "deployment-one"}
-    assets = ROOT.parent / "_dev_261006/src/webui/assets"
+    assets = (ooptra_source or ROOT.parent / "Ooptra") / "src/webui/assets"
     initial_config = deepcopy(dict(config))
     initial_state = dict(state)
     maintenance = {"ok": True, "preflight": {"supported": True, "checks": [{"id": "preview", "passed": True, "detail": "模拟部署检查"}]},
                    "backups": [], "job": None, "check": None, "busy": False, "restore_supported": True, "current_channel": "dev"}
 
-    def upstream(request):
+    async def upstream(request):
         calls.append({"method": request.method, "path": request.url.path,
                       "body": json.loads(request.content) if request.content else None})
         if request.headers.get("Authorization") != "Bearer preview-server-only-token":
@@ -193,6 +212,24 @@ def build_app(astrbot_source: Path):
             plain = path.removeprefix("/api")
             if plain == "/voice/status":
                 data = {**state, "status": dict(state)}
+            elif plain == "/voice/astrbot/refresh":
+                state["astrbot_context"] = {"active": bool(config.get("context_sync_enabled")),
+                    "state": "ready", "connected": True, "group_id": "123456789",
+                    "persona_id": config.get("context_persona_id") or "群聊助手",
+                    "provider": "", "pending_writes": 0}
+                data = {"ok": True, "astrbot_context": state["astrbot_context"]}
+            elif plain == "/voice/astrbot/bindings":
+                action = body.get("action", "list")
+                if action == "save":
+                    data = await plugin.panel.save_binding(body)
+                elif action == "delete":
+                    data = await plugin.panel.delete_binding(body)
+                elif action.startswith("source-"):
+                    data = await plugin.panel.sources(body)
+                else:
+                    data = {"ok": True, **plugin.panel.bootstrap()}
+            elif plain == "/voice/astrbot/text-channels":
+                data = {"ok": True, "bot_id": "99", "channels": [{"id": "text-channel", "name": "文字闲聊", "group_id": "789"}]}
             elif plain == "/oopz/areas":
                 data = {"ok": True, "areas": [{"id": "demo-area", "name": "开黑基地"}, {"id": "demo-area-2", "name": "朋友的小岛"}], "default_area": "demo-area", "default_channel": "demo-channel"}
             elif plain in {"/voice/channels", "/oopz/channels"}:
@@ -320,7 +357,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("astrbot_source", type=Path)
     parser.add_argument("--port", type=int, default=18765)
+    parser.add_argument("--ooptra-source", type=Path, help="Ooptra checkout whose frontend is served")
     args = parser.parse_args()
     settings = Config()
     settings.bind = [f"127.0.0.1:{args.port}"]
-    asyncio.run(serve(build_app(args.astrbot_source), settings))
+    asyncio.run(serve(build_app(args.astrbot_source, args.ooptra_source), settings))

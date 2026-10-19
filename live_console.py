@@ -27,6 +27,9 @@ def adapt_script(source: str) -> tuple[str, bool]:
                      ("new EventSource(", "new window.OoptraPanel.EventSource("),
                      ("window.open(", "window.OoptraPanel.openLink(")):
         source = source.replace(old, new)
+    # Keep the deployed router inside AstrBot's plugin asset route and token.
+    source = re.sub(r"(?<![\w$.])(?:window\.)?history(?=[.\[])", "window.OoptraPanel.history", source)
+    source = re.sub(r"(?<![\w$.])(?:window\.)?location\.(pathname|href)\b", r"window.OoptraPanel.location.\1", source)
     return source, found_api
 
 

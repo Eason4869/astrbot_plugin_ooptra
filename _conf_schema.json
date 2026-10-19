@@ -19,10 +19,10 @@
     "default": 8.0
   },
   "group_map": {
-    "description": "QQ 群 → Oopz 域/频道映射",
+    "description": "完整 UMO → Oopz 域/频道映射",
     "type": "dict",
     "default": {},
-    "hint": "键为 QQ 群号。值：{\"area\": \"域ID\", \"channel\": \"频道ID\", \"label\": \"备注\"}；一群多域用 \"areas\": [\"ID1\",\"ID2\"]（按 Ooptra 默认域择一）。也可用 /语音绑定 写入。"
+    "hint": "推荐在会话对应页面维护。键为完整 UMO（实例名:GroupMessage:群ID 或 实例名:FriendMessage:用户ID），兼容旧数字群号。值含 area/areas、channel、label、allow_control；同一范围可映射多个会话，独立选择人格与记忆。"
   },
   "allow_join": {
     "description": "允许触发进/退语音",
@@ -51,5 +51,47 @@
     "type": "bool",
     "default": true,
     "hint": "关闭后模型无法查询/控制语音（工具会返回已禁用）"
+  },
+  "context_sync_enabled": {
+    "description": "同步 AstrBot 人格与双向记忆",
+    "type": "bool",
+    "default": false,
+    "hint": "开启后使用会话对应页面已选的人格和记忆来源；重进语音或在工作台刷新上下文生效。"
+  },
+  "context_persona_id": {
+    "description": "旧绑定默认人格 ID",
+    "type": "string",
+    "default": "",
+    "hint": "仅用于尚未配置独立来源规则的旧唯一绑定；留空跟随原会话。新规则请在会话对应页面单选人格来源并可手选内置人格覆盖。"
+  },
+  "context_memory_provider": {
+    "description": "主记忆插件",
+    "type": "string",
+    "default": "auto",
+    "options": [
+      "auto",
+      "none",
+      "memory_companion",
+      "livingmemory"
+    ],
+    "hint": "auto 自动识别；多个记忆插件时需指定一个；none 只同步人格。"
+  },
+  "context_sources": {
+    "description": "独立的人格与记忆来源",
+    "type": "dict",
+    "default": {},
+    "hint": "推荐通过页面维护。rules 按 area/channel 保存单个人格来源 persona_umo、可选 persona_id、最多 8 个记忆会话 memory_umos（查询全部并写回全部），私聊须 allow_private 明确确认。频道覆盖域默认；空对象兼容旧唯一绑定，rules 空列表不回退。"
+  },
+  "context_platform_id": {
+    "description": "QQ 平台实例 ID",
+    "type": "string",
+    "default": "",
+    "hint": "只有一个 aiocqhttp 实例时自动识别；多个时填写 AstrBot 平台 ID。"
+  },
+  "context_identity_links": {
+    "description": "Oopz UID 与 QQ 用户关联",
+    "type": "dict",
+    "default": {},
+    "hint": "键为 Oopz UID，值为 QQ 号；未关联者以 Oopz 来源记录，不根据昵称猜测。"
   }
 }

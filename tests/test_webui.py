@@ -6,14 +6,46 @@ import asyncio
 import json
 import unittest
 from copy import deepcopy
+from types import SimpleNamespace
 
 import httpx
 from test_main_logic import _plugin
 
-from ooptra_client import OoptraClient
+from ooptra_client import OoptraClient, OoptraError
 
 
 class TestControlPanel(unittest.IsolatedAsyncioTestCase):
+    async def test_source_persistence_does_not_change_controls_and_delete_disables_legacy(self):
+        self.config["group_map"] = {"qq:GroupMessage:123": {"area": "AREA-A"}, "qq:GroupMessage:456": {"area": "AREA-A"}}
+        before = deepcopy(self.config["group_map"])
+        self.plugin.context = SimpleNamespace(platform_manager=SimpleNamespace(get_insts=lambda: [SimpleNamespace(meta=lambda: SimpleNamespace(id="qq", name="aiocqhttp"))]))
+        await self.panel.sources({"action": "source-save", "area": "AREA-A", "channel": "",
+            "persona_umo": "qq:GroupMessage:123", "memory_umos": ["qq:GroupMessage:123", "qq:GroupMessage:456"]})
+        self.assertEqual(self.config["context_sources"]["rules"][0]["memory_umos"], ["qq:GroupMessage:123", "qq:GroupMessage:456"])
+        self.assertEqual(self.config["group_map"], before)
+        await self.panel.sources({"action": "source-delete", "area": "AREA-A", "channel": ""})
+        self.assertEqual(self.config["context_sources"], {"rules": []})
+
+    async def test_source_config_rollback_and_invalid_session_never_persist(self):
+        body = {"action": "source-save", "area": "AREA-A", "persona_umo": "qq:GroupMessage:123"}
+        with self.assertRaisesRegex(ValueError, "未映射"):
+            await self.panel.sources(body)
+        self.assertNotIn("context_sources", self.config)
+        self.plugin.context = SimpleNamespace(platform_manager=SimpleNamespace(get_insts=lambda: [SimpleNamespace(meta=lambda: SimpleNamespace(id="qq", name="aiocqhttp"))]))
+        self.config["group_map"] = {"qq:GroupMessage:123": {"area": "AREA-A"}}
+        def fail():
+            raise OSError("disk full")
+        self.config.save_config = fail
+        with self.assertRaises(OSError):
+            await self.panel.sources(body)
+        self.assertNotIn("context_sources", self.config)
+
+    async def test_multiple_control_groups_may_share_one_room(self):
+        self.config["group_map"] = {"123": {"area": "AREA-A", "channel": ""}}
+        await self.panel.save_binding({"group_id": "456", "areas": ["AREA-A"],
+            "channel": "CHANNEL-A", "label": "other"})
+        self.assertIn("456", self.config["group_map"])
+
     def setUp(self):
         self.plugin, self.config = _plugin(api_token="server-only-secret")
         self.panel = getattr(self.plugin, "panel", None)
@@ -51,7 +83,7 @@ class TestControlPanel(unittest.IsolatedAsyncioTestCase):
         self.config["group_map"] = {"123456": {"areas": ["AREA-A", "AREA-B"], "channel": "", "extra": "keep"},
                                      "654321": "AREA-C:CHANNEL-C"}
         await self.panel.save_binding({"group_id": "123456", "areas": ["AREA-A", "AREA-B"], "channel": "CHANNEL-A", "label": "新备注"})
-        self.assertEqual(self.config["group_map"]["123456"], {"areas": ["AREA-A", "AREA-B"], "channel": "CHANNEL-A", "label": "新备注", "extra": "keep"})
+        self.assertEqual(self.config["group_map"]["123456"], {"areas": ["AREA-A", "AREA-B"], "channel": "CHANNEL-A", "label": "新备注", "extra": "keep", "allow_control": True})
         self.assertEqual(self.config["group_map"]["654321"], "AREA-C:CHANNEL-C")
         self.assertEqual(self.config.saved, 1)
 
@@ -63,6 +95,11 @@ class TestControlPanel(unittest.IsolatedAsyncioTestCase):
             with self.subTest(body=body), self.assertRaises(ValueError):
                 await self.panel.save_binding(body)
         self.assertEqual(self.config["group_map"], {})
+        self.assertEqual(self.config.saved, 0)
+
+    async def test_binding_rejects_channel_from_another_area(self):
+        with self.assertRaisesRegex(ValueError, "不属于"):
+            await self.panel.save_binding({"group_id": "123456", "areas": ["AREA-A"], "channel": "CHANNEL-B"})
         self.assertEqual(self.config.saved, 0)
 
     async def test_unbind_removes_legacy_integer_key_only_for_target_group(self):
@@ -79,7 +116,7 @@ class TestControlPanel(unittest.IsolatedAsyncioTestCase):
 
         self.config.save_config = fail
         with self.assertRaises(OSError):
-            await self.panel.save_binding({"group_id": "123456", "areas": ["AREA-B"], "channel": "new"})
+            await self.panel.save_binding({"group_id": "123456", "areas": ["AREA-B"], "channel": "CHANNEL-A"})
         self.assertEqual(self.config["group_map"], before)
 
     async def test_concurrent_binding_updates_preserve_both_groups(self):
@@ -119,7 +156,7 @@ class TestControlPanel(unittest.IsolatedAsyncioTestCase):
 
     async def test_failed_voice_response_never_reports_success(self):
         self.responses["/voice/join"] = {"ok": False, "error": "join failed"}
-        with self.assertRaises(Exception):
+        with self.assertRaises(OoptraError):
             await self.panel.action({"action": "join", "area": "AREA-A", "channel": "CHANNEL-A"})
         self.assertIsNone(self.plugin._check_voice_cooldown())
 
@@ -215,6 +252,8 @@ class TestControlPanel(unittest.IsolatedAsyncioTestCase):
 
     async def test_new_console_routes_preserve_methods_and_query(self):
         for method, path, params in (("GET", "/api/voice/preview/prompts", {"kind": "enter", "area": "AREA-A"}),
+                                     ("GET", "/api/voice/astrbot/bindings", {}),
+                                     ("POST", "/api/voice/astrbot/bindings", {}),
                                      ("GET", "/api/maintenance", {}),
                                      ("POST", "/api/maintenance/check", {}),
                                      ("POST", "/api/maintenance/backups", {}),
