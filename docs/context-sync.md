@@ -1,6 +1,6 @@
 # 人格与双向记忆开发说明
 
-配套版本：astrbot_plugin_ooptra 1.3.0-dev / Ooptra 261019.1-dev。
+配套版本：astrbot_plugin_ooptra 2.0.0 / Ooptra 261019-dev（预设正式版 4.0.0）。
 
 ## 适配器边界
 

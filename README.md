@@ -2,9 +2,9 @@
 
 在 AstrBot 里管理 Oopz 语音房，让语音聊天使用 QQ 群的人格和长期记忆。
 
-当前开发版：**1.3.0-dev**。
+当前版本：**2.0.0（dev 分支）**。本次未创建正式发布或标签。
 
-> 此版本需配合 **[Ooptra 261019.1-dev 及以上版本](https://github.com/Eason4869/Ooptra/tree/dev)** 使用，人格与双向记忆依赖双方的 AstrBot 上下文协议 v1。请同时更新两个项目。
+> 此版本需配合 **[Ooptra 261019-dev 及以上版本](https://github.com/Eason4869/Ooptra/tree/dev)** 使用（对应预设正式版 **4.0.0**），人格与双向记忆依赖双方的 AstrBot 上下文协议 v1。请同时更新两个项目。
 
 Ooptra 负责 Oopz 连接与音频对话；本插件负责 QQ 群绑定、人格选择、记忆接入和 AstrBot 内的语音工作台。
 
